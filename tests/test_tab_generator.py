@@ -1,6 +1,6 @@
 import pytest
 
-from tab_generator import generate_tab
+from tab_generator import generate_chord_tab, generate_tab
 
 
 def test_generate_tab():
@@ -38,3 +38,23 @@ def test_rejects_invalid_fret():
 def test_rejects_fret_over_24():
     with pytest.raises(ValueError):
         generate_tab("0 2 25 1 0 0")
+
+def test_generate_chord_tab():
+    result = generate_chord_tab("E")
+
+    assert result == "\n".join([
+        "e|--0--|",
+        "B|--0--|",
+        "G|--1--|",
+        "D|--2--|",
+        "A|--2--|",
+        "E|--0--|",
+    ])
+
+
+def test_rejects_unknown_chord():
+    with pytest.raises(
+        ValueError,
+        match="対応していないコードです。",
+    ):
+        generate_chord_tab("Unknown")

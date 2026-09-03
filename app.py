@@ -1,21 +1,28 @@
 from flask import Flask, render_template, request
-#Flask は、Webアプリ本体を作るために使います。
-#render_template は、HTMLファイルを読み込んでブラウザに表示するために使います。
-from tab_generator import generate_tab
+
+from tab_generator import CHORDS, generate_chord_tab, generate_tab
+
 
 app = Flask(__name__)
-#Flask(__name__) でFlaskアプリを作成して、それを app という変数に入れています。
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     tab = None
     error = None
     frets = ""
+    selected_chord = ""
+
     if request.method == "POST":
-        frets = request.form.get("frets", "").strip()
+        mode = request.form.get("mode", "frets")
 
         try:
-            tab = generate_tab(frets)
+            if mode == "chord":
+                selected_chord = request.form.get("chord", "")
+                tab = generate_chord_tab(selected_chord)
+            else:
+                frets = request.form.get("frets", "").strip()
+                tab = generate_tab(frets)
         except ValueError as exc:
             error = str(exc)
 
@@ -24,6 +31,8 @@ def index():
         tab=tab,
         error=error,
         frets=frets,
+        chords=CHORDS.keys(),
+        selected_chord=selected_chord,
     )
 
 

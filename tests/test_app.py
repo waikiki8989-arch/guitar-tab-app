@@ -32,3 +32,29 @@ def test_show_validation_error():
 
     assert response.status_code == 200
     assert "フレット番号を6個入力してください。" in response.text
+
+def test_generate_tab_from_chord():
+    client = app.test_client()
+
+    response = client.post(
+        "/",
+        data={
+            "mode": "chord",
+            "chord": "E",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "e|--0--|" in response.text
+    assert "E|--0--|" in response.text
+
+
+def test_chord_options_are_displayed():
+    client = app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert '<option' in response.text
+    assert 'value="C"' in response.text
+    assert 'value="Em"' in response.text

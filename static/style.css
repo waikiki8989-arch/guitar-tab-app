@@ -4,13 +4,14 @@ form {
     margin-top: 24px;
 }
 
-input {
+input,
+select {
     padding: 12px;
     border: 1px solid #bbb;
     border-radius: 6px;
+    background-color: white;
     font-size: 16px;
 }
-
 button {
     padding: 12px;
     border: 0;
@@ -38,4 +39,8 @@ button:hover {
     font-family: monospace;
     font-size: 18px;
     line-height: 1.6;
+}
+
+section + section {
+    margin-top: 32px;
 }

@@ -1,5 +1,22 @@
 STRING_NAMES = ["E", "A", "D", "G", "B", "e"]
 
+CHORDS = {
+    "C": "x 3 2 0 1 0",
+    "D": "x x 0 2 3 2",
+    "E": "0 2 2 1 0 0",
+    "G": "3 2 0 0 0 3",
+    "A": "x 0 2 2 2 0",
+    "Am": "x 0 2 2 1 0",
+    "Em": "0 2 2 0 0 0",
+}
+
+
+def generate_chord_tab(chord_name):
+    if chord_name not in CHORDS:
+        raise ValueError("対応していないコードです。")
+
+    return generate_tab(CHORDS[chord_name])
+
 
 def generate_tab(frets_text):
     frets = frets_text.split()
