@@ -12,30 +12,61 @@
 <body>
     <main>
         <h1>Guitar Tab App</h1>
-        <p>6弦から1弦の順番、フレット番号を入力してください。</p>
 
-        <form method="post">
-            <label for="frets">フレット番号</label>
+        <section>
+            <h2>コードから作成</h2>
 
-            <input
-                id="frets"
-                name="frets"
-                type="text"
-                value="{{ frets }}"
-                placeholder="例: 0 2 2 1 0 0"
-                required
-            >
+            <form method="post">
+                <input type="hidden" name="mode" value="chord">
 
-            <button type="submit">タブ譜を作成</button>
-        </form>
+                <label for="chord">コードを選択</label>
+
+                <select id="chord" name="chord">
+                    {% for chord_name in chords %}
+                        <option
+                            value="{{ chord_name }}"
+                            {% if chord_name == selected_chord %}selected{% endif %}
+                        >
+                            {{ chord_name }}
+                        </option>
+                    {% endfor %}
+                </select>
+
+                <button type="submit">コードのタブ譜を作成</button>
+            </form>
+        </section>
+
+        <section>
+            <h2>フレット番号から作成</h2>
+            <p>6弦から1弦の順番で入力してください。</p>
+
+            <form method="post">
+                <input type="hidden" name="mode" value="frets">
+
+                <label for="frets">フレット番号</label>
+
+                <input
+                    id="frets"
+                    name="frets"
+                    type="text"
+                    value="{{ frets }}"
+                    placeholder="例: 0 2 2 1 0 0"
+                    required
+                >
+
+                <button type="submit">タブ譜を作成</button>
+            </form>
+        </section>
 
         {% if error %}
             <p class="error">{{ error }}</p>
         {% endif %}
 
         {% if tab %}
-            <h2>生成結果</h2>
-            <pre class="tab">{{ tab }}</pre>
+            <section>
+                <h2>生成結果</h2>
+                <pre class="tab">{{ tab }}</pre>
+            </section>
         {% endif %}
     </main>
 </body>
