@@ -12,7 +12,31 @@
 <body>
     <main>
         <h1>Guitar Tab App</h1>
-        <p>ギターのタブ譜を作成するアプリです。</p>
+        <p>6弦から1弦の順番、フレット番号を入力してください。</p>
+
+        <form method="post">
+            <label for="frets">フレット番号</label>
+
+            <input
+                id="frets"
+                name="frets"
+                type="text"
+                value="{{ frets }}"
+                placeholder="例: 0 2 2 1 0 0"
+                required
+            >
+
+            <button type="submit">タブ譜を作成</button>
+        </form>
+
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+
+        {% if tab %}
+            <h2>生成結果</h2>
+            <pre class="tab">{{ tab }}</pre>
+        {% endif %}
     </main>
 </body>
 </html>
