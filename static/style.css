@@ -1,0 +1,19 @@
+body {
+    margin: 0;
+    background-color: #f4f4f4;
+    color: #222;
+    font-family: sans-serif;
+}
+
+main {
+    width: min(90%, 700px);
+    margin: 80px auto;
+    padding: 32px;
+    border-radius: 12px;
+    background-color: white;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 10%);
+}
+
+h1 {
+    color: #8b4513;
+}
