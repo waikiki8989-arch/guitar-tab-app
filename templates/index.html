@@ -18,6 +18,7 @@
             <p>非圧縮の .musicxml・.xml（2 MiB以下）に対応しています。</p>
             <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="mode" value="musicxml">
+                {% if state_token %}<input type="hidden" name="score_state" value="{{ state_token }}">{% endif %}
                 <label for="musicxml">MusicXMLファイル</label>
                 <input id="musicxml" name="musicxml" type="file" accept=".musicxml,.xml" required>
                 <button type="submit">音符を読み込む</button>
@@ -25,7 +26,15 @@
             <p>PDF・画像・.mxl、score-timewise形式、装飾音、移調楽器は未対応です。</p>
         </section>
 
+        {% if error %}
+            <p class="error" role="alert">{{ error }}</p>
+        {% endif %}
+        {% if message %}
+            <p class="notice" role="status">{{ message }}</p>
+        {% endif %}
+
         {% if notes is not none %}
+            {% include 'melody_editor.html' %}
             <section>
                 <h2>読み込んだ音符</h2>
                 <p>{{ filename }} — {{ notes|length }}音</p>
@@ -67,6 +76,7 @@
 
             <form method="post">
                 <input type="hidden" name="mode" value="chord">
+                {% if state_token %}<input type="hidden" name="score_state" value="{{ state_token }}">{% endif %}
 
                 <label for="chord">コードを選択</label>
 
@@ -91,6 +101,7 @@
 
             <form method="post">
                 <input type="hidden" name="mode" value="frets">
+                {% if state_token %}<input type="hidden" name="score_state" value="{{ state_token }}">{% endif %}
 
                 <label for="frets">フレット番号</label>
 
@@ -106,10 +117,6 @@
                 <button type="submit">タブ譜を作成</button>
             </form>
         </section>
-
-        {% if error %}
-            <p class="error" role="alert">{{ error }}</p>
-        {% endif %}
 
         {% if tab %}
             <section>

@@ -1,0 +1,107 @@
+{% macro note_cells(note) %}
+    <td>{{ note.measure }}</td><td>{{ note.pitch }}</td>
+    <td>{{ note.start }}</td><td>{{ note.duration }}</td>
+    <td>{{ note.part_name or '未指定' }} ({{ note.part_id }})</td>
+    <td>{{ note.staff or '未指定' }}</td><td>{{ note.voice or '未指定' }}</td>
+{% endmacro %}
+{% macro note_headers() %}
+    <th scope="col">小節</th><th scope="col">音名</th>
+    <th scope="col">開始位置</th><th scope="col">長さ</th>
+    <th scope="col">パート</th><th scope="col">譜表</th><th scope="col">声部</th>
+{% endmacro %}
+
+<section aria-labelledby="melody-heading">
+    <h2 id="melody-heading">メロディーを選ぶ</h2>
+    <p>パート・譜表・声部で候補を絞り込み、メロディーに使う音を選んでください。</p>
+    <p>チェックの変更は「選択を反映」などのボタンを押すと反映されます。
+        表示条件を変えても、ほかの候補から選んだ音は残ります。</p>
+    <p>開始位置は曲の先頭＝0、時間の単位は四分音符＝1です。
+        選ばなかった音の時間を詰めず、休符に相当する空白を維持します。</p>
+    <form method="post" id="melody-form">
+        <input type="hidden" name="mode" value="melody">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <fieldset class="melody-filters">
+            <legend>候補の表示条件</legend>
+            {% for field, label in [('part_id', 'パート'), ('staff', '譜表'), ('voice', '声部')] %}
+                <div>
+                    <label for="filter-{{ field }}">{{ label }}</label>
+                    <select id="filter-{{ field }}" name="{{ field }}">
+                        <option value="">すべて</option>
+                        {% for value, name in options[field] %}
+                            <option value="{{ value }}" {% if filters.get(field) == value %}selected{% endif %}>
+                                {% if field == 'part_id' %}
+                                    {{ name }} — {{ (notes|selectattr('part_id', 'equalto', name)|first).part_name or '未指定' }}
+                                {% else %}
+                                    {{ name if name is not none else '未指定' }}
+                                {% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endfor %}
+            <button name="action" value="filter">条件を反映</button>
+        </fieldset>
+
+        <div class="button-row">
+            <button name="action" value="bulk">条件に一致する音をまとめて追加</button>
+            <button name="action" value="apply">選択を反映</button>
+        </div>
+        <div class="score-table" tabindex="0" role="region" aria-label="メロディー候補一覧">
+            <table id="candidate-notes">
+                <caption>候補 {{ candidates|length }}音</caption>
+                <thead><tr><th scope="col">選択</th>{{ note_headers() }}</tr></thead>
+                <tbody>
+                    {% for note in candidates %}
+                        <tr data-note-id="{{ note.note_id }}" {% if note.note_id in selection.selected_ids %}class="selected-note"{% endif %}>
+                            <td><input type="checkbox" name="selected_ids" value="{{ note.note_id }}"
+                                aria-label="小節{{ note.measure }}・{{ note.part_id }}・譜表{{ note.staff or '未指定' }}・声部{{ note.voice or '未指定' }}・{{ note.pitch }}・開始位置{{ note.start }}を選択"
+                                {% if note.note_id in selection.selected_ids %}checked{% endif %}></td>
+                            {{ note_cells(note) }}
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="8">条件に一致する音符がありません。表示条件を変更してください。</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h3>選択済みメロディー — {{ selection.selected_notes|length }}音</h3>
+        {% if selection.conflicts %}
+            <div class="melody-warning" role="alert">
+                <p>同じ開始位置で複数の音が選ばれています。単旋律として各位置で1音に絞ってください。</p>
+                <ul>
+                    {% for start, group in selection.conflicts.items() %}
+                        <li>開始位置 {{ start }}：{% for note in group %}{{ note.pitch }}（小節{{ note.measure }}・{{ note.part_id }}・譜表{{ note.staff or '未指定' }}・声部{{ note.voice or '未指定' }}）{% if not loop.last %}、{% endif %}{% endfor %}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+        {% if selection.selected_notes %}
+            <div class="score-table" tabindex="0" role="region" aria-label="選択済みメロディー一覧">
+                <table id="selected-notes">
+                    <caption>曲の開始位置順（表示条件にかかわらず全選択音を表示）</caption>
+                    <thead><tr>{{ note_headers() }}<th scope="col">操作</th></tr></thead>
+                    <tbody>
+                        {% for note in selection.selected_notes %}
+                            <tr data-note-id="{{ note.note_id }}">
+                                {{ note_cells(note) }}
+                                <td><button name="action" value="remove:{{ note.note_id }}"
+                                    aria-label="小節{{ note.measure }}・{{ note.pitch }}・開始位置{{ note.start }}を除外">除外</button></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p>メロディーは未選択です。候補の音にチェックして「選択を反映」を押してください。</p>
+        {% endif %}
+        <button name="action" value="confirm">メロディーを確定</button>
+        {% if selection.confirmed %}
+            <p class="notice" role="status">確定済み：{{ selection.selected_notes|length }}音。選択を変更した場合は再度確定してください。</p>
+        {% else %}
+            <p>未確定：選択を確認してから「メロディーを確定」を押してください。</p>
+        {% endif %}
+    </form>
+    <p>作業内容はファイルには保存されません。ページを新しく開く・サーバーを再起動する場合は、楽譜の読み込みからやり直してください。</p>
+    <noscript><p>この画面はJavaScriptを使わずに操作できます。</p></noscript>
+</section>
