@@ -10,3 +10,5 @@ pluggy==1.6.0
 Pygments==2.21.0
 pytest==9.1.1
 Werkzeug==3.1.8
+music21==10.5.0
+defusedxml==0.7.1
