@@ -1,0 +1,79 @@
+<section aria-labelledby="estimate-heading">
+    <h2 id="estimate-heading">音符からコード候補を探す</h2>
+    <p>元の楽譜のメロディーと伴奏から候補を出します。推定だけではコード進行は変わりません。</p>
+    <p>初期設定は各小節を1区間として解析します。小節途中でコードが変わる場合は、対象小節と分割位置を指定してください。</p>
+    <form method="post" class="chord-entry">
+        <input type="hidden" name="mode" value="estimate">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        {% for field, label in [('part_id', '解析するパート'), ('staff', '解析する譜表')] %}
+            <label for="estimate-{{ field }}">{{ label }}</label>
+            <select id="estimate-{{ field }}" name="{{ field }}">
+                <option value="">すべて</option>
+                {% for value, name in options[field] %}
+                    <option value="{{ value }}" {% if estimate_form[field] == value %}selected{% endif %}>{{ name if name is not none else '未指定' }}</option>
+                {% endfor %}
+            </select>
+        {% endfor %}
+        <label for="estimate-measure">対象小節</label>
+        <select id="estimate-measure" name="measure_id">
+            <option value="">すべての小節（1小節ごと）</option>
+            {% for measure in progression.measures %}
+                <option value="{{ measure.measure_id }}" {% if estimate_form.measure_id == measure.measure_id %}selected{% endif %}>小節{{ measure.number }}（開始{{ measure.start }}・長さ{{ measure.duration }}）</option>
+            {% endfor %}
+        </select>
+        <label for="estimate-start">小節内の開始位置（空欄＝先頭）</label>
+        <input id="estimate-start" name="start_offset" value="{{ estimate_form.start_offset }}" placeholder="0" maxlength="40">
+        <label for="estimate-end">小節内の終了位置（空欄＝小節末尾）</label>
+        <input id="estimate-end" name="end_offset" value="{{ estimate_form.end_offset }}" placeholder="例：4" maxlength="40">
+        <label for="estimate-splits">小節内の分割位置（任意、カンマ区切り）</label>
+        <input id="estimate-splits" name="split_points" value="{{ estimate_form.split_points }}" placeholder="例：2 または 1, 2, 3" maxlength="400">
+        <p>小節の先頭＝0、四分音符＝1。1/3などの分数も指定できます。区間・分割位置を入力する場合は小節を1つ選んでください。</p>
+        <button name="estimate_action" value="run">コード候補を推定・再推定</button>
+    </form>
+    {% if estimate_results %}
+        <p>最大3候補を順位順に表示します。順位は候補同士の比較であり、正解の確率ではありません。</p>
+        <form method="post">
+            <input type="hidden" name="mode" value="estimate">
+            <input type="hidden" name="score_state" value="{{ state_token }}">
+            {% for result in estimate_results %}
+                {% set index = loop.index0 %}
+                <article class="estimate-result" aria-label="推定区間{{ index + 1 }}">
+                    <h3>小節{{ result.measure.number }}：小節内{{ result.start - result.measure.start }}〜{{ result.end - result.measure.start }}</h3>
+                    <p>曲の開始位置 {{ result.start }}〜{{ result.end }}</p>
+                    <p>区間内の音と発音時間の合計：
+                        {% for pitch, duration in result.observed %}{{ pitch }}（{{ duration }}）{% if not loop.last %}、{% endif %}{% else %}なし{% endfor %}
+                    </p>
+                    {% if result.bass %}<p>区間内の最低音：{{ result.bass }}</p>{% endif %}
+                    <p>現在のコード（採用時はこの区間だけ変更）：</p>
+                    <ul>{% for start, end, events in progression.affected_segments(result.start, result.end) %}
+                        <li>{{ start }}〜{{ end }}：{{ events|map(attribute='symbol.name')|join(' / ') if events else 'コード未設定' }}</li>
+                    {% endfor %}</ul>
+                    {% if index in estimate_state.skipped %}
+                        <p>この区間は見送り済みです。再び候補を選ぶには再推定してください。</p>
+                    {% elif result.candidates %}
+                        {% if index in estimate_existing %}
+                            <label class="replace-confirm"><input type="checkbox" name="replace_{{ index }}" value="yes">上記の区間内の既存コードを、選んだ候補に置き換える</label>
+                        {% endif %}
+                        <div class="score-table" tabindex="0" role="region" aria-label="小節{{ result.measure.number }}のコード候補">
+                            <table>
+                                <thead><tr><th scope="col">順位</th><th scope="col">コード候補</th><th scope="col">一致する音</th><th scope="col">コード外の音</th><th scope="col">不足する構成音</th><th scope="col">操作</th></tr></thead>
+                                <tbody>{% for candidate in result.candidates %}
+                                    <tr>
+                                        <td>{{ loop.index }}</td><td>{{ candidate.symbol.name }}</td>
+                                        <td>{{ candidate.matched|join('、') }}</td><td>{{ candidate.outside|join('、') or 'なし' }}</td>
+                                        <td>{{ candidate.missing|join('、') or 'なし' }}</td>
+                                        <td><button name="estimate_action" value="adopt:{{ index }}:{{ loop.index0 }}">この区間に採用</button></td>
+                                    </tr>
+                                {% endfor %}</tbody>
+                            </table>
+                        </div>
+                        <button name="estimate_action" value="skip:{{ index }}">この区間は見送る</button>
+                    {% else %}
+                        <p>{{ result.reason }}</p>
+                    {% endif %}
+                </article>
+            {% endfor %}
+        </form>
+        <p>候補を採用しない場合は、下の「コード進行」で手入力するか、未設定のままにできます。</p>
+    {% endif %}
+</section>

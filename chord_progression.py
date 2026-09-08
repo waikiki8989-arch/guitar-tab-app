@@ -7,17 +7,21 @@ from uuid import uuid4
 from xml.etree import ElementTree as ET
 
 
-CHORD_SUFFIXES = {
-    "major": "", "minor": "m", "dominant": "7", "major-seventh": "M7",
-    "minor-seventh": "m7", "diminished": "dim", "augmented": "aug",
-    "suspended-fourth": "sus4",
+CHORD_DEFINITIONS = {
+    "major": ("", (0, 4, 7)), "minor": ("m", (0, 3, 7)),
+    "dominant": ("7", (0, 4, 7, 10)), "major-seventh": ("M7", (0, 4, 7, 11)),
+    "minor-seventh": ("m7", (0, 3, 7, 10)), "diminished": ("dim", (0, 3, 6)),
+    "augmented": ("aug", (0, 4, 8)), "suspended-fourth": ("sus4", (0, 5, 7)),
 }
+CHORD_SUFFIXES = {kind: definition[0] for kind, definition in CHORD_DEFINITIONS.items()}
 KIND_LABELS = {
     "major": "メジャー", "minor": "マイナー", "dominant": "セブンス",
     "major-seventh": "メジャーセブンス", "minor-seventh": "マイナーセブンス",
     "diminished": "ディミニッシュ", "augmented": "オーギュメント",
-    "suspended-fourth": "サスペンデッド4", "none": "和音なし",
+    "suspended-fourth": "サスペンデッド4", "none": "和音なし", "unset": "コード未設定",
 }
+SOURCE_LABELS = {"imported": "楽譜から読み込み", "manual": "手入力",
+                 "estimated": "推定候補から採用", "boundary": "区間後の未設定を復元"}
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,7 @@ class ChordEvent:
     start: Fraction
     source: str = "imported"
     part_id: str | None = None
+    restored: bool = False
 
 
 def parse_chord_name(name):
@@ -158,7 +163,33 @@ class ChordProgression:
         symbol = previous.symbol if previous and name.strip() == previous.symbol.name else parse_chord_name(name)
         start = self.position(measure_id, offset)
         event = ChordEvent(event_id or f"manual-{uuid4().hex}", symbol, start, "manual")
-        events = [e for e in self.events if e.event_id != event_id] + [event]
+        events = [e for e in self.events if e.event_id != event_id
+                  and not (e.start == start and e.symbol.kind == "unset")] + [event]
+        return replace(self, events=_deduplicate(events))
+
+    def affected_segments(self, start, end):
+        return tuple((max(a, start), min(b, end), events) for a, b, events in self.segments
+                     if a < end and b > start)
+
+    def apply_interval(self, symbol, start, end, *, replace_existing=False):
+        if not 0 <= start < end <= self.end:
+            raise ValueError("採用する区間が曲の範囲外です。")
+        if not symbol.supported or symbol.kind not in CHORD_DEFINITIONS:
+            raise ValueError("対応する推定候補を選んでください。")
+        affected = self.affected_segments(start, end)
+        if any(e.symbol.kind != "unset" for _, _, events in affected for e in events) and not replace_existing:
+            raise ValueError("この区間の既存コードを確認し、置き換えのチェックを入れてください。")
+        after = next((events for a, b, events in self.segments if a <= end < b), ())
+        events = [event for event in self.events if not start <= event.start < end]
+        events.append(ChordEvent(f"estimated-{uuid4().hex}", symbol, start, "estimated"))
+        # Restore even an unset or conflicting state; a local adoption must not leak beyond end.
+        if end < self.end and not any(event.start == end for event in self.events):
+            if after:
+                events.extend(replace(event, event_id=f"restore-{uuid4().hex}", start=end, restored=True)
+                              for event in after)
+            else:
+                events.append(ChordEvent(f"boundary-{uuid4().hex}",
+                                         ChordSymbol("コード未設定", None, "unset", None), end, "boundary"))
         return replace(self, events=_deduplicate(events))
 
     def delete(self, event_id):
