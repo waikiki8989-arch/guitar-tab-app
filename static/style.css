@@ -44,3 +44,11 @@ button:hover {
 section + section {
     margin-top: 32px;
 }
+
+body { font-family: sans-serif; color: #222; background: #faf8f5; }
+main { max-width: 1100px; margin: 32px auto; padding: 0 20px 40px; }
+.score-table { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; background: white; }
+caption { text-align: left; padding: 12px 0; font-weight: bold; }
+th, td { padding: 10px 12px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+th { background: #eee7dd; }

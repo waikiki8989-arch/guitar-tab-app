@@ -14,6 +14,55 @@
         <h1>Guitar Tab App</h1>
 
         <section>
+            <h2>ピアノ譜を読み込む</h2>
+            <p>非圧縮の .musicxml・.xml（2 MiB以下）に対応しています。</p>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="mode" value="musicxml">
+                <label for="musicxml">MusicXMLファイル</label>
+                <input id="musicxml" name="musicxml" type="file" accept=".musicxml,.xml" required>
+                <button type="submit">音符を読み込む</button>
+            </form>
+            <p>PDF・画像・.mxl、score-timewise形式、装飾音、移調楽器は未対応です。</p>
+        </section>
+
+        {% if notes is not none %}
+            <section>
+                <h2>読み込んだ音符</h2>
+                <p>{{ filename }} — {{ notes|length }}音</p>
+                <p>開始位置は曲の先頭を0とし、開始位置・長さは四分音符＝1です。
+                    未記載の情報は「未指定」と表示します。休符は時間に反映し、表には表示しません。</p>
+                <p>反復は展開せず記譜順に表示します。タイでつながる音も記譜どおり別々に表示します。</p>
+                {% if notes %}
+                    <div class="score-table" tabindex="0" role="region" aria-label="音符一覧（横スクロール可能）">
+                        <table>
+                            <caption>音符・パート情報</caption>
+                            <thead><tr>
+                                <th scope="col">小節</th><th scope="col">パートID</th>
+                                <th scope="col">パート名</th><th scope="col">譜表</th>
+                                <th scope="col">声部</th><th scope="col">音名</th>
+                                <th scope="col">開始位置</th><th scope="col">長さ</th>
+                            </tr></thead>
+                            <tbody>
+                                {% for note in notes %}
+                                    <tr>
+                                        <td>{{ note.measure }}</td><td>{{ note.part_id }}</td>
+                                        <td>{{ note.part_name or '未指定' }}</td>
+                                        <td>{{ note.staff or '未指定' }}</td>
+                                        <td>{{ note.voice or '未指定' }}</td>
+                                        <td>{{ note.pitch }}</td><td>{{ note.start }}</td>
+                                        <td>{{ note.duration }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p>音高のある音符はありません（休符のみの楽譜）。</p>
+                {% endif %}
+            </section>
+        {% endif %}
+
+        <section>
             <h2>コードから作成</h2>
 
             <form method="post">
@@ -59,7 +108,7 @@
         </section>
 
         {% if error %}
-            <p class="error">{{ error }}</p>
+            <p class="error" role="alert">{{ error }}</p>
         {% endif %}
 
         {% if tab %}
