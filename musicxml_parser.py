@@ -5,6 +5,8 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 from music21.musicxml.xmlToM21 import MeasureParser
 
+from chord_progression import ChordEvent, ScoreMeasure, parse_harmony
+
 
 MAX_XML_BYTES = 2 * 1024 * 1024
 
@@ -24,6 +26,13 @@ class ScoreNote:
     voice: str | None
     measure: str
     note_id: str = ""
+
+
+@dataclass(frozen=True)
+class ParsedScore:
+    notes: tuple[ScoreNote, ...]
+    measures: tuple[ScoreMeasure, ...]
+    harmonies: tuple[ChordEvent, ...]
 
 
 def _text(element, path):
@@ -50,6 +59,7 @@ def _parse_measure(measure, divisions, part_id, part_name):
     extent = Fraction(0)
     previous = None
     notes = []
+    harmonies = []
     parser = MeasureParser()
     for element in measure:
         if element.tag == "attributes":
@@ -58,6 +68,15 @@ def _parse_measure(measure, divisions, part_id, part_name):
             value = _text(element, "divisions")
             if value is not None:
                 divisions = _positive(value, "divisions")
+        elif element.tag == "harmony":
+            offset = _text(element, "offset")
+            try:
+                shift = Fraction(offset) / divisions if offset is not None and divisions is not None else Fraction(0)
+            except (ValueError, ZeroDivisionError) as exc:
+                raise MusicXMLParseError("コード記号のoffsetが不正です。") from exc
+            if offset is not None and divisions is None:
+                raise MusicXMLParseError("コード記号の時間単位（divisions）がありません。")
+            harmonies.append(ChordEvent("", parse_harmony(element), cursor + shift, part_id=part_id))
         elif element.tag in ("backup", "forward"):
             if divisions is None:
                 raise MusicXMLParseError("音の時間単位（divisions）がありません。")
@@ -102,10 +121,10 @@ def _parse_measure(measure, divisions, part_id, part_name):
                                    staff, voice, number))
     if extent == 0:
         raise MusicXMLParseError("長さを判定できない空の小節があります。休符を含む楽譜を使用してください。")
-    return notes, extent, divisions
+    return notes, extent, divisions, harmonies
 
 
-def parse_musicxml(data: bytes) -> list[ScoreNote]:
+def parse_score(data: bytes) -> ParsedScore:
     """Read uncompressed score-partwise XML without writing uploaded data to disk.
 
     Missing optional metadata stays None. Rests advance time but are not rows.
@@ -152,20 +171,37 @@ def parse_musicxml(data: bytes) -> list[ScoreNote]:
         divisions = None
         parsed_measures = []
         for measure in measures:
-            notes, extent, divisions = _parse_measure(measure, divisions, part_id, names[part_id])
-            parsed_measures.append((notes, extent))
+            notes, extent, divisions, harmonies = _parse_measure(measure, divisions, part_id, names[part_id])
+            parsed_measures.append((notes, extent, harmonies, measure.get("number")))
         parsed_parts.append(parsed_measures)
     if len({len(part) for part in parsed_parts}) != 1:
         raise MusicXMLParseError("パート間の小節数が一致しません。")
 
     result = []
+    result_harmonies = []
+    result_measures = []
     start = Fraction(0)
-    for measure_group in zip(*parsed_parts):
-        for notes, _ in measure_group:
+    for index, measure_group in enumerate(zip(*parsed_parts), 1):
+        duration = max(extent for _, extent, _, _ in measure_group)
+        result_measures.append(ScoreMeasure(f"measure-{index}", measure_group[0][3], start, duration))
+        for notes, _, harmonies, _ in measure_group:
             for note in notes:
                 result.append(ScoreNote(note.pitch, start + note.start, note.duration,
                                         note.part_id, note.part_name, note.staff,
                                         note.voice, note.measure))
-        start += max(extent for _, extent in measure_group)
-    return [replace(note, note_id=f"note-{index}")
-            for index, note in enumerate(sorted(result, key=lambda note: note.start), 1)]
+            result_harmonies.extend(replace(event, start=start + event.start) for event in harmonies)
+        start += duration
+    if any(not 0 <= event.start < start for event in result_harmonies):
+        raise MusicXMLParseError("コード記号の位置が曲の範囲外です。")
+    return ParsedScore(
+        tuple(replace(note, note_id=f"note-{index}")
+              for index, note in enumerate(sorted(result, key=lambda note: note.start), 1)),
+        tuple(result_measures),
+        tuple(replace(event, event_id=f"chord-{index}")
+              for index, event in enumerate(sorted(result_harmonies, key=lambda event: event.start), 1)),
+    )
+
+
+def parse_musicxml(data: bytes) -> list[ScoreNote]:
+    """Compatibility entry point for consumers that only need the original notes."""
+    return list(parse_score(data).notes)
