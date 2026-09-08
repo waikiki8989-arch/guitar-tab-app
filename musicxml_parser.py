@@ -26,6 +26,7 @@ class ScoreNote:
     voice: str | None
     measure: str
     note_id: str = ""
+    tie: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,7 @@ def _parse_measure(measure, divisions, part_id, part_name):
                 raise MusicXMLParseError("音符の音高または記譜情報を読み取れません。") from exc
             pitch = parsed.pitch.nameWithOctave.replace("-", "b")
             notes.append(ScoreNote(pitch, onset, duration, part_id, part_name,
-                                   staff, voice, number))
+                                   staff, voice, number, tie=parsed.tie.type if parsed.tie else None))
     if extent == 0:
         raise MusicXMLParseError("長さを判定できない空の小節があります。休符を含む楽譜を使用してください。")
     return notes, extent, divisions, harmonies
@@ -186,9 +187,7 @@ def parse_score(data: bytes) -> ParsedScore:
         result_measures.append(ScoreMeasure(f"measure-{index}", measure_group[0][3], start, duration))
         for notes, _, harmonies, _ in measure_group:
             for note in notes:
-                result.append(ScoreNote(note.pitch, start + note.start, note.duration,
-                                        note.part_id, note.part_name, note.staff,
-                                        note.voice, note.measure))
+                result.append(replace(note, start=start + note.start))
             result_harmonies.extend(replace(event, start=start + event.start) for event in harmonies)
         start += duration
     if any(not 0 <= event.start < start for event in result_harmonies):

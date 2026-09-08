@@ -2,6 +2,9 @@
     <h2 id="chord-progression-heading">コード進行</h2>
     <p>コードの追加・変更・削除で、元の音符や選択したメロディーは変わりません。</p>
     <p>開始位置は曲の先頭＝0、時間の単位は四分音符＝1です。コードは次のコードまで、最後のコードは曲の終わり（{{ progression.end }}）まで有効です。</p>
+    {% if progression.events|selectattr('symbol.kind', 'equalto', 'unset')|list %}
+        <p>「コード未設定」の行は、候補を採用した区間より後を未設定に戻す境界です。削除すると前のコードが先へ延びます。</p>
+    {% endif %}
     {% if not progression.original %}
         <p>楽譜にコード記号がありません。下の入力欄からコード進行を追加できます。</p>
     {% endif %}
@@ -51,7 +54,7 @@
                             <td>{{ event.symbol.root or '—' }}</td>
                             <td>{{ kind_labels.get(event.symbol.kind, event.symbol.kind or '不明') }}</td>
                             <td>{{ event.symbol.bass or '—' }}</td>
-                            <td>{{ '楽譜から読み込み' if event.source == 'imported' else '手入力' }}</td>
+                            <td>{{ source_labels.get(event.source, event.source) }}{% if event.restored %}（区間後に復元）{% endif %}</td>
                             <td><div class="button-row">
                                 <button name="progression_action" value="edit:{{ event.event_id }}" aria-label="開始位置{{ event.start }}の{{ event.symbol.name }}を変更">変更</button>
                                 <button name="progression_action" value="delete:{{ event.event_id }}" aria-label="開始位置{{ event.start }}の{{ event.symbol.name }}を削除">削除</button>

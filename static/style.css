@@ -68,3 +68,5 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: #8b4513; }
 .chord-entry { max-width: 650px; }
 .original-harmonies { margin-top: 24px; }
 summary { cursor: pointer; }
+.estimate-result { padding: 16px; border: 1px solid #c9bcaa; border-radius: 8px; margin: 12px 0; background: #fff; }
+.replace-confirm { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
