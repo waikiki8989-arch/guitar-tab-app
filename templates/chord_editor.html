@@ -1,0 +1,99 @@
+<section aria-labelledby="chord-progression-heading">
+    <h2 id="chord-progression-heading">コード進行</h2>
+    <p>コードの追加・変更・削除で、元の音符や選択したメロディーは変わりません。</p>
+    <p>開始位置は曲の先頭＝0、時間の単位は四分音符＝1です。コードは次のコードまで、最後のコードは曲の終わり（{{ progression.end }}）まで有効です。</p>
+    {% if not progression.original %}
+        <p>楽譜にコード記号がありません。下の入力欄からコード進行を追加できます。</p>
+    {% endif %}
+
+    {% if progression.conflicts %}
+        <div class="melody-warning" role="alert">
+            <p>同じ位置に異なるコードがあります。不要なコードを削除するか、名前・位置を変更してください。</p>
+            <ul>{% for start, events in progression.conflicts.items() %}
+                <li>開始位置 {{ start }}：{{ events|map(attribute='symbol.name')|join('、') }}</li>
+            {% endfor %}</ul>
+        </div>
+    {% endif %}
+
+    <div class="progression-summary" aria-label="コードの有効区間">
+        {% for start, end, events in progression.segments %}
+            <p><strong>{{ start }} 〜 {{ end }}</strong>：
+                {% if not events %}コード未設定
+                {% elif events|length > 1 %}要修正（{{ events|map(attribute='symbol.name')|join(' / ') }}）
+                {% else %}{{ events[0].symbol.name }}{% if not events[0].symbol.supported %}（未対応）{% endif %}
+                {% endif %}
+            </p>
+        {% endfor %}
+    </div>
+
+    {% if progression.events %}
+        <form method="post">
+            <input type="hidden" name="mode" value="progression">
+            <input type="hidden" name="score_state" value="{{ state_token }}">
+            <div class="score-table" tabindex="0" role="region" aria-label="コード進行一覧">
+                <table id="chord-events">
+                    <caption>編集後のコード進行 — {{ progression.events|length }}件</caption>
+                    <thead><tr>
+                        <th scope="col">小節</th><th scope="col">小節内位置</th><th scope="col">開始位置</th>
+                        <th scope="col">コード名</th><th scope="col">ルート</th><th scope="col">種別</th>
+                        <th scope="col">指定ベース音</th><th scope="col">入力元</th><th scope="col">操作</th>
+                    </tr></thead>
+                    <tbody>{% for event in progression.events %}
+                        {% set measure = progression.measure_at(event.start) %}
+                        <tr data-chord-id="{{ event.event_id }}">
+                            <td>{{ measure.number }}</td><td>{{ event.start - measure.start }}</td><td>{{ event.start }}</td>
+                            <td>{{ event.symbol.name }}
+                                {% if not event.symbol.supported %}
+                                    <strong class="error">未対応</strong>
+                                    <details><summary>元の記号情報</summary><pre class="raw-harmony">{{ event.symbol.raw_xml }}</pre></details>
+                                {% endif %}
+                            </td>
+                            <td>{{ event.symbol.root or '—' }}</td>
+                            <td>{{ kind_labels.get(event.symbol.kind, event.symbol.kind or '不明') }}</td>
+                            <td>{{ event.symbol.bass or '—' }}</td>
+                            <td>{{ '楽譜から読み込み' if event.source == 'imported' else '手入力' }}</td>
+                            <td><div class="button-row">
+                                <button name="progression_action" value="edit:{{ event.event_id }}" aria-label="開始位置{{ event.start }}の{{ event.symbol.name }}を変更">変更</button>
+                                <button name="progression_action" value="delete:{{ event.event_id }}" aria-label="開始位置{{ event.start }}の{{ event.symbol.name }}を削除">削除</button>
+                            </div></td>
+                        </tr>
+                    {% endfor %}</tbody>
+                </table>
+            </div>
+        </form>
+    {% endif %}
+
+    <h3>{{ '選択したコードを変更' if chord_form.event_id else 'コードを追加' }}</h3>
+    <form method="post" class="chord-entry">
+        <input type="hidden" name="mode" value="progression">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <input type="hidden" name="event_id" value="{{ chord_form.event_id }}">
+        <label for="symbol-name">コード名</label>
+        <input id="symbol-name" name="symbol_name" value="{{ chord_form.symbol_name }}" placeholder="例：C、Dm7/G、N.C." required maxlength="80" aria-describedby="chord-help">
+        <p id="chord-help">対応例：C、Am、G7、CM7（Cmaj7）、Dm7、Bdim、Caug、Dsus4、C/E。♯・♭も入力できます。和音なしは N.C. と入力してください。</p>
+        <label for="chord-measure">小節</label>
+        <select id="chord-measure" name="measure_id" required>
+            <option value="">小節を選択</option>
+            {% for measure in progression.measures %}
+                <option value="{{ measure.measure_id }}" {% if chord_form.measure_id == measure.measure_id %}selected{% endif %}>小節 {{ measure.number }}（開始 {{ measure.start }}、長さ {{ measure.duration }}）</option>
+            {% endfor %}
+        </select>
+        <label for="chord-offset">小節内位置（先頭＝0、四分音符＝1）</label>
+        <input id="chord-offset" name="offset" value="{{ chord_form.offset }}" placeholder="例：0、1.5、1/3" required maxlength="40">
+        <div class="button-row">
+            <button name="progression_action" value="save">{{ '変更を反映' if chord_form.event_id else 'コードを追加' }}</button>
+            {% if chord_form.event_id %}<button name="progression_action" value="cancel" formnovalidate>変更を取り消す</button>{% endif %}
+        </div>
+    </form>
+    {% if progression.original %}
+        <details class="original-harmonies">
+            <summary>楽譜から読み込んだ元のコード記号（{{ progression.original|length }}件）</summary>
+            <p>編集・削除しても元の記号はここに保持します。</p>
+            <ul>{% for event in progression.original %}
+                <li>開始位置 {{ event.start }} — {{ event.symbol.name }}（{{ event.part_id }}）{% if not event.symbol.supported %}：未対応{% endif %}
+                    <details><summary>元情報</summary><pre class="raw-harmony">{{ event.symbol.raw_xml }}</pre></details>
+                </li>
+            {% endfor %}</ul>
+        </details>
+    {% endif %}
+</section>

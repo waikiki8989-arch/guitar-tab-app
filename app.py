@@ -5,8 +5,9 @@ import secrets
 from flask import Flask, render_template, request
 from itsdangerous import BadData, URLSafeTimedSerializer
 
+from chord_progression import ChordProgression, KIND_LABELS
 from melody import FILTER_FIELDS, MelodySelection, filter_notes, filter_options
-from musicxml_parser import MAX_XML_BYTES, parse_musicxml
+from musicxml_parser import MAX_XML_BYTES, parse_score
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -20,7 +21,7 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
-def render_page(*, selection=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, filename="", filters=None, **context):
     filters = filters or {}
     if selection is not None:
         context.update(
@@ -29,11 +30,13 @@ def render_page(*, selection=None, filename="", filters=None, **context):
             options={field: filter_options(selection.notes, field) for field in FILTER_FIELDS},
             state_token=state_serializer().dumps({
                 "selection": selection.to_data(), "filename": filename, "filters": filters,
+                "progression": progression.to_data() if progression is not None else None,
             }),
         )
     else:
         context["notes"] = None
     return render_template("index.html", chords=CHORDS.keys(), selection=selection,
+                           progression=progression, kind_labels=KIND_LABELS,
                            filename=filename, filters=filters, **context)
 
 
@@ -49,6 +52,8 @@ def index():
     frets = ""
     selected_chord = ""
     selection = None
+    progression = None
+    chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
     filters = {}
     filename = ""
     message = None
@@ -67,15 +72,42 @@ def index():
                 else:
                     selection = MelodySelection.from_data(state["selection"])
                     filename, filters = state["filename"], state["filters"]
+                    if state.get("progression") is not None:
+                        progression = ChordProgression.from_data(state["progression"])
             if mode == "musicxml":
                 uploaded = request.files.get("musicxml")
                 if uploaded is None or not uploaded.filename:
                     raise ValueError("MusicXMLファイルを選択してください。")
                 if Path(uploaded.filename).suffix.lower() not in (".musicxml", ".xml"):
                     raise ValueError(".musicxml または .xml を選択してください。.mxl・PDF・画像は未対応です。")
-                imported = parse_musicxml(uploaded.read(MAX_XML_BYTES + 1))
-                selection = MelodySelection(tuple(imported))
+                imported = parse_score(uploaded.read(MAX_XML_BYTES + 1))
+                new_progression = ChordProgression.from_import(imported.measures, imported.harmonies)
+                selection = MelodySelection(imported.notes)
+                progression = new_progression
                 filename, filters = uploaded.filename, {}
+            elif mode == "progression":
+                if progression is None:
+                    raise ValueError("先にMusicXMLファイルを読み込んでください。")
+                action = request.form.get("progression_action", "")
+                if action == "save":
+                    chord_form = {key: request.form.get(key, "") for key in chord_form}
+                    updated = progression.save(chord_form["symbol_name"], chord_form["measure_id"],
+                                               chord_form["offset"], chord_form["event_id"])
+                    progression = updated
+                    chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
+                    message = "コード進行を更新しました。同じ位置の同じコードは1つにまとめています。"
+                elif action.startswith("edit:"):
+                    event = next((e for e in progression.events if e.event_id == action[5:]), None)
+                    if event is None:
+                        raise ValueError("変更するコードが見つかりません。")
+                    measure = progression.measure_at(event.start)
+                    chord_form = {"event_id": event.event_id, "symbol_name": event.symbol.name,
+                                  "measure_id": measure.measure_id, "offset": str(event.start - measure.start)}
+                elif action.startswith("delete:"):
+                    progression = progression.delete(action[7:])
+                    message = "コードを削除しました。前のコードの有効範囲は次のコードまで延びます。"
+                elif action != "cancel":
+                    raise ValueError("コード進行の操作が不正です。")
             elif mode == "melody":
                 if selection is None:
                     raise ValueError("先にMusicXMLファイルを読み込んでください。")
@@ -116,6 +148,8 @@ def index():
         frets=frets,
         selected_chord=selected_chord,
         selection=selection,
+        progression=progression,
+        chord_form=chord_form,
         filename=filename,
         filters=filters,
         message=message,
