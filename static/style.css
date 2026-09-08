@@ -52,3 +52,13 @@ table { width: 100%; border-collapse: collapse; background: white; }
 caption { text-align: left; padding: 12px 0; font-weight: bold; }
 th, td { padding: 10px 12px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
 th { background: #eee7dd; }
+
+.melody-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; border: 1px solid #bbb; border-radius: 6px; }
+.melody-filters label { display: block; margin-bottom: 6px; }
+.melody-filters select { max-width: 100%; }
+.button-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.selected-note { background: #f5efe3; }
+input[type="checkbox"] { width: 22px; height: 22px; accent-color: #8b4513; }
+.notice { padding: 12px; background: #e9f3e8; border-left: 4px solid #397138; }
+.melody-warning { padding: 12px 16px; background: #fff2da; border-left: 4px solid #a96600; }
+:focus-visible { outline: 3px solid #2162a2; outline-offset: 3px; }

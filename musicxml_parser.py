@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 
 from defusedxml import ElementTree
@@ -23,6 +23,7 @@ class ScoreNote:
     staff: str | None
     voice: str | None
     measure: str
+    note_id: str = ""
 
 
 def _text(element, path):
@@ -166,4 +167,5 @@ def parse_musicxml(data: bytes) -> list[ScoreNote]:
                                         note.part_id, note.part_name, note.staff,
                                         note.voice, note.measure))
         start += max(extent for _, extent in measure_group)
-    return sorted(result, key=lambda note: note.start)
+    return [replace(note, note_id=f"note-{index}")
+            for index, note in enumerate(sorted(result, key=lambda note: note.start), 1)]
