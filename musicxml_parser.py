@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 
 from defusedxml import ElementTree
@@ -6,6 +6,7 @@ from defusedxml.common import DefusedXmlException
 from music21.musicxml.xmlToM21 import MeasureParser
 
 from chord_progression import ChordEvent, ScoreMeasure, parse_harmony
+from score_metadata import read_changes
 
 
 MAX_XML_BYTES = 2 * 1024 * 1024
@@ -27,6 +28,11 @@ class ScoreNote:
     measure: str
     note_id: str = ""
     tie: str | None = None
+    note_type: str | None = None
+    dots: int = 0
+    tuplet_actual: int | None = None
+    tuplet_normal: int | None = None
+    accidental: str | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +40,7 @@ class ParsedScore:
     notes: tuple[ScoreNote, ...]
     measures: tuple[ScoreMeasure, ...]
     harmonies: tuple[ChordEvent, ...]
+    notation: dict = field(default_factory=dict)
 
 
 def _text(element, path):
@@ -61,8 +68,12 @@ def _parse_measure(measure, divisions, part_id, part_name):
     previous = None
     notes = []
     harmonies = []
+    changes, warnings = [], []
     parser = MeasureParser()
     for element in measure:
+        metadata, issues = read_changes(element, cursor, divisions)
+        changes.extend(metadata)
+        warnings.extend(issues)
         if element.tag == "attributes":
             if element.find("transpose") is not None:
                 raise MusicXMLParseError("移調楽器の楽譜は未対応です。ピアノ譜を使用してください。")
@@ -119,10 +130,14 @@ def _parse_measure(measure, divisions, part_id, part_name):
                 raise MusicXMLParseError("音符の音高または記譜情報を読み取れません。") from exc
             pitch = parsed.pitch.nameWithOctave.replace("-", "b")
             notes.append(ScoreNote(pitch, onset, duration, part_id, part_name,
-                                   staff, voice, number, tie=parsed.tie.type if parsed.tie else None))
+                                   staff, voice, number, tie=parsed.tie.type if parsed.tie else None,
+                                   note_type=_text(element, "type"), dots=len(element.findall("dot")),
+                                   tuplet_actual=parsed.duration.tuplets[0].numberNotesActual if parsed.duration.tuplets else None,
+                                   tuplet_normal=parsed.duration.tuplets[0].numberNotesNormal if parsed.duration.tuplets else None,
+                                   accidental=_text(element, "accidental")))
     if extent == 0:
         raise MusicXMLParseError("長さを判定できない空の小節があります。休符を含む楽譜を使用してください。")
-    return notes, extent, divisions, harmonies
+    return notes, extent, divisions, harmonies, changes, warnings
 
 
 def parse_score(data: bytes) -> ParsedScore:
@@ -172,8 +187,8 @@ def parse_score(data: bytes) -> ParsedScore:
         divisions = None
         parsed_measures = []
         for measure in measures:
-            notes, extent, divisions, harmonies = _parse_measure(measure, divisions, part_id, names[part_id])
-            parsed_measures.append((notes, extent, harmonies, measure.get("number")))
+            notes, extent, divisions, harmonies, changes, warnings = _parse_measure(measure, divisions, part_id, names[part_id])
+            parsed_measures.append((notes, extent, harmonies, measure.get("number"), changes, warnings))
         parsed_parts.append(parsed_measures)
     if len({len(part) for part in parsed_parts}) != 1:
         raise MusicXMLParseError("パート間の小節数が一致しません。")
@@ -181,11 +196,20 @@ def parse_score(data: bytes) -> ParsedScore:
     result = []
     result_harmonies = []
     result_measures = []
+    notation_changes, notation_warnings = {}, []
     start = Fraction(0)
     for index, measure_group in enumerate(zip(*parsed_parts), 1):
-        duration = max(extent for _, extent, _, _ in measure_group)
+        duration = max(item[1] for item in measure_group)
         result_measures.append(ScoreMeasure(f"measure-{index}", measure_group[0][3], start, duration))
-        for notes, _, harmonies, _ in measure_group:
+        for notes, _, harmonies, _, changes, warnings in measure_group:
+            notation_warnings.extend(warnings)
+            for change in changes:
+                change = {**change, "start": str(start + change["start"])}
+                key = (change["kind"], change["start"])
+                if key in notation_changes and notation_changes[key]["value"] != change["value"]:
+                    notation_warnings.append("パート間で拍子・調号・テンポが異なる箇所は、先のパートの指定を使用します。")
+                else:
+                    notation_changes[key] = change
             for note in notes:
                 result.append(replace(note, start=start + note.start))
             result_harmonies.extend(replace(event, start=start + event.start) for event in harmonies)
@@ -198,6 +222,7 @@ def parse_score(data: bytes) -> ParsedScore:
         tuple(result_measures),
         tuple(replace(event, event_id=f"chord-{index}")
               for index, event in enumerate(sorted(result_harmonies, key=lambda event: event.start), 1)),
+        {"changes": list(notation_changes.values()), "warnings": list(dict.fromkeys(notation_warnings))},
     )
 
 
