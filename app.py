@@ -9,6 +9,7 @@ from chord_progression import ChordProgression, KIND_LABELS, SOURCE_LABELS
 from chord_estimation import DEFAULT_SETTINGS, estimate_sections
 from melody import FILTER_FIELDS, MelodySelection, filter_notes, filter_options
 from musicxml_parser import MAX_XML_BYTES, parse_score
+from score_preview import build_preview
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -22,7 +23,7 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
-def render_page(*, selection=None, progression=None, estimate_state=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, estimate_state=None, filename="", filters=None, **context):
     filters = filters or {}
     if selection is not None:
         context.update(
@@ -33,6 +34,7 @@ def render_page(*, selection=None, progression=None, estimate_state=None, filena
                 "selection": selection.to_data(), "filename": filename, "filters": filters,
                 "progression": progression.to_data() if progression is not None else None,
                 "estimate_state": estimate_state,
+                "notation": notation or {},
             }),
         )
     else:
@@ -42,10 +44,17 @@ def render_page(*, selection=None, progression=None, estimate_state=None, filena
         context["estimate_form"] = estimate_state["settings"] if estimate_state else DEFAULT_SETTINGS
     existing = {i for i, result in enumerate(results)
                 if any(e.symbol.kind != "unset" for _, _, events in progression.affected_segments(result.start, result.end) for e in events)}
+    preview, preview_error = None, None
+    if selection is not None and progression is not None:
+        try:
+            preview = build_preview(selection, progression, notation, filename or 'メロディーとコード')
+        except ValueError as exc:
+            preview_error = str(exc)
     return render_template("index.html", chords=CHORDS.keys(), selection=selection,
                            progression=progression, kind_labels=KIND_LABELS,
                            source_labels=SOURCE_LABELS, estimate_state=estimate_state,
                            estimate_results=results, estimate_existing=existing,
+                           preview=preview, preview_error=preview_error,
                            filename=filename, filters=filters, **context)
 
 
@@ -62,6 +71,7 @@ def index():
     selected_chord = ""
     selection = None
     progression = None
+    notation = {}
     estimate_state = None
     estimate_form = None
     chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
@@ -86,6 +96,7 @@ def index():
                     if state.get("progression") is not None:
                         progression = ChordProgression.from_data(state["progression"])
                     estimate_state = state.get("estimate_state")
+                    notation = state.get("notation", {})
             if mode == "musicxml":
                 uploaded = request.files.get("musicxml")
                 if uploaded is None or not uploaded.filename:
@@ -96,6 +107,7 @@ def index():
                 new_progression = ChordProgression.from_import(imported.measures, imported.harmonies)
                 selection = MelodySelection(imported.notes)
                 progression = new_progression
+                notation = imported.notation
                 estimate_state = None
                 filename, filters = uploaded.filename, {}
             elif mode == "estimate":
@@ -204,6 +216,7 @@ def index():
         selected_chord=selected_chord,
         selection=selection,
         progression=progression,
+        notation=notation,
         estimate_state=estimate_state,
         estimate_form=estimate_form,
         chord_form=chord_form,

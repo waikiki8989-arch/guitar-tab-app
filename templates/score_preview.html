@@ -1,0 +1,29 @@
+<section aria-labelledby="score-heading">
+    <h2 id="score-heading">メロディーとコードの五線譜・確認再生</h2>
+    {% if preview_error %}
+        <p class="error" role="alert">{{ preview_error }}</p>
+    {% elif not preview %}
+        <p>メロディーが未選択です。下の「メロディーを選ぶ」で音を選び、「選択を反映」を押してください。</p>
+    {% else %}
+        {% if not selection.confirmed %}<p>選択中のメロディーのプレビューです。まだ確定されていません。</p>{% endif %}
+        <p>コードは和声確認用の簡易伴奏です。反復は展開せず、記譜順に1回再生します。</p>
+        <p>強弱・特殊奏法は再現しません。コードや拍子の変更位置では、音を分割してタイで表示する場合があります。</p>
+        {% if preview.warnings %}<ul class="melody-warning">{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+        <div class="playback-controls">
+            <button type="button" id="play-score" disabled>再生</button>
+            <button type="button" id="pause-score" disabled>一時停止</button>
+            <button type="button" id="stop-score" disabled>停止（先頭に戻る）</button>
+            <label for="playback-mode">再生する音</label>
+            <select id="playback-mode"><option value="melody">メロディーのみ</option><option value="all">メロディーとコード</option></select>
+            <label for="playback-speed">再生速度</label>
+            <select id="playback-speed"><option value="0.5">0.5倍</option><option value="0.75">0.75倍</option><option value="1" selected>1倍</option><option value="1.25">1.25倍</option><option value="1.5">1.5倍</option><option value="2">2倍</option></select>
+        </div>
+        <p id="playback-status" role="status">五線譜を準備しています…</p>
+        <p id="playback-position">曲の先頭から 0（四分音符＝1）</p>
+        <div class="score-scroll"><div id="score-sheet" role="img" aria-label="選択したメロディーとコードの五線譜"></div></div>
+        <noscript><p>五線譜表示と再生にはJavaScriptを有効にしてください。</p></noscript>
+        <script id="score-preview-data" type="application/json">{{ preview|tojson }}</script>
+        <script defer src="{{ url_for('static', filename='vendor/opensheetmusicdisplay-2.1.2.min.js') }}"></script>
+        <script defer src="{{ url_for('static', filename='score_player.js') }}"></script>
+    {% endif %}
+</section>

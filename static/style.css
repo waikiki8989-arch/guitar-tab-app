@@ -70,3 +70,7 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: #8b4513; }
 summary { cursor: pointer; }
 .estimate-result { padding: 16px; border: 1px solid #c9bcaa; border-radius: 8px; margin: 12px 0; background: #fff; }
 .replace-confirm { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+.playback-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.score-scroll { overflow-x: auto; background: white; border: 1px solid #ddd; }
+#score-sheet { min-width: 640px; position: relative; }
+button:disabled { opacity: .5; cursor: default; }
