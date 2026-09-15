@@ -1,0 +1,61 @@
+<section aria-labelledby="fingering-heading">
+    <h2 id="fingering-heading">ギターの弦・フレットを選ぶ</h2>
+    <p>標準チューニング（6弦からE2・A2・D3・G3・B3・E4）の実音で変換します。
+        元のメロディーと五線譜・確認再生はそのままです。</p>
+    {% if not selection.confirmed %}
+        <p>先に「メロディーを確定」を押してください。選択を変更した場合も再確定が必要です。</p>
+    {% elif fingering_error %}
+        <p class="error" role="alert">{{ fingering_error }}</p>
+    {% else %}
+        <form method="post">
+            <input type="hidden" name="mode" value="fingering">
+            <input type="hidden" name="score_state" value="{{ state_token }}">
+            <label for="max-fret">使用するフレット上限（0〜24）</label>
+            <input id="max-fret" name="max_fret" type="number" min="0" max="24" required value="{{ fingering_state.max_fret }}">
+            <label for="guitar-octave">メロディー全体のオクターブ移動</label>
+            <select id="guitar-octave" name="octave">
+                {% for value, label in [(0, '変更なし'), (-1, '1オクターブ下'), (1, '1オクターブ上')] %}
+                    <option value="{{ value }}" {% if fingering_state.octave == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button name="fingering_action" value="calculate">設定を反映・運指を再計算</button>
+        </form>
+        <p>前後のフレット移動・弦移動が少ない候補を自動選択します。弾きやすさを保証するものではありません。
+            手動変更を再計算後も残すには固定してください。タイの変更・固定・解除はつながる音全体に反映します。</p>
+        <div class="score-table fingering-table" tabindex="0" role="region" aria-label="運指一覧（横スクロール可能）">
+            <table>
+                <caption>ギター用の運指（開始位置・長さは四分音符＝1）</caption>
+                <thead><tr><th>小節</th><th>元の音名</th><th>ギターの実音</th><th>開始位置</th><th>長さ</th><th>選択運指</th><th>固定状態・未変換の理由</th><th>候補・変更</th></tr></thead>
+                <tbody>
+                {% for row in fingering_rows %}
+                    <tr data-fingering-note="{{ row.note.note_id }}">
+                        <td>{{ row.note.measure }}</td><td>{{ row.note.pitch }}</td><td>{{ row.guitar_pitch }}</td>
+                        <td>{{ row.note.start }}</td><td>{{ row.note.duration }}</td>
+                        <td>{% if row.position %}{{ row.position[0] }}弦 {{ row.position[1] }}フレット{% else %}未変換{% endif %}</td>
+                        <td>{% if row.locked %}固定あり（{{ row.saved_lock[0] }}弦 {{ row.saved_lock[1] }}フレット）{% else %}固定なし{% endif %}
+                            {% if row.reason %}<p class="error">{{ row.reason }}</p>{% endif %}</td>
+                        <td>
+                            <form method="post">
+                                <input type="hidden" name="mode" value="fingering">
+                                <input type="hidden" name="score_state" value="{{ state_token }}">
+                                <input type="hidden" name="note_id" value="{{ row.note.note_id }}">
+                                {% if row.candidates %}
+                                    <label for="position-{{ row.note.note_id }}">{{ row.note.pitch }}・開始{{ row.note.start }}の候補</label>
+                                    <select id="position-{{ row.note.note_id }}" name="position">
+                                        {% for position in row.candidates %}
+                                            <option value="{{ position[0] }}:{{ position[1] }}" {% if position == row.position %}selected{% endif %}>{{ position[0] }}弦 {{ position[1] }}フレット</option>
+                                        {% endfor %}
+                                    </select>
+                                    <label><input type="checkbox" name="lock" value="yes" {% if row.locked %}checked{% endif %}>この運指を固定する</label>
+                                    <button name="fingering_action" value="choose">運指を反映</button>
+                                {% else %}<p>候補なし</p>{% endif %}
+                                {% if row.locked %}<button name="fingering_action" value="unlock">固定を解除</button>{% endif %}
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
