@@ -155,3 +155,16 @@ test('audio startup errors restore controls and display the reason', async () =>
     assert.equal(elements.get('play-score').disabled, false);
     assert.equal(timers.size, 0);
 });
+
+test('unconverted notes require acknowledgement before audio starts', async () => {
+    const {player, elements, oscillators} = setup();
+    player.data.missing = [{start: '5', measure: '2'}];
+    elements.set('allow-missing-playback', {checked: false});
+    await player.play();
+    assert.equal(player.state, 'stopped');
+    assert.equal(oscillators.length, 0);
+    assert.match(elements.get('playback-status').textContent, /確認欄/);
+    elements.get('allow-missing-playback').checked = true;
+    await player.play();
+    assert.equal(player.state, 'playing');
+});

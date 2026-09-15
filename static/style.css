@@ -77,3 +77,9 @@ button:disabled { opacity: .5; cursor: default; }
 
 .fingering-table td:nth-child(7) { white-space: normal; min-width: 16em; }
 .fingering-table form { margin-top: 0; }
+
+.tab-editor form { max-width: 700px; }
+.tab-hit { fill: transparent; stroke: transparent; stroke-width: 2; cursor: pointer; }
+.tab-hit:hover, .tab-hit:focus { fill: #2162a21a; stroke: #2162a2; outline: none; }
+.tab-hit.tab-selected { fill: #ed8b0026; stroke: #ad6100; }
+.tab-hit.tab-missing { stroke: #c62828; stroke-dasharray: 3 2; }

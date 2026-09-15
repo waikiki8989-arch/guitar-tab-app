@@ -1,5 +1,5 @@
 <section aria-labelledby="score-heading">
-    <h2 id="score-heading">メロディーとコードの五線譜・確認再生</h2>
+    <h2 id="score-heading">{{ 'ギター五線譜・TAB編集・確認再生' if preview and preview.guitar else 'メロディーとコードの五線譜・確認再生' }}</h2>
     {% if preview_error %}
         <p class="error" role="alert">{{ preview_error }}</p>
     {% elif not preview %}
@@ -9,6 +9,7 @@
         <p>コードは和声確認用の簡易伴奏です。反復は展開せず、記譜順に1回再生します。</p>
         <p>強弱・特殊奏法は再現しません。コードや拍子の変更位置では、音を分割してタイで表示する場合があります。</p>
         {% if preview.warnings %}<ul class="melody-warning">{% for warning in preview.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+        {% if preview.guitar %}{% include 'tab_editor.html' %}{% endif %}
         <div class="playback-controls">
             <button type="button" id="play-score" disabled>再生</button>
             <button type="button" id="pause-score" disabled>一時停止</button>
@@ -20,10 +21,11 @@
         </div>
         <p id="playback-status" role="status">五線譜を準備しています…</p>
         <p id="playback-position">曲の先頭から 0（四分音符＝1）</p>
-        <div class="score-scroll"><div id="score-sheet" role="img" aria-label="選択したメロディーとコードの五線譜"></div></div>
+        <div class="score-scroll"><div id="score-sheet" role="region" aria-label="五線譜とTABの表示・音符選択"></div></div>
         <noscript><p>五線譜表示と再生にはJavaScriptを有効にしてください。</p></noscript>
         <script id="score-preview-data" type="application/json">{{ preview|tojson }}</script>
         <script defer src="{{ url_for('static', filename='vendor/opensheetmusicdisplay-2.1.2.min.js') }}"></script>
+        {% if preview.guitar %}<script defer src="{{ url_for('static', filename='tab_editor.js') }}"></script>{% endif %}
         <script defer src="{{ url_for('static', filename='score_player.js') }}"></script>
     {% endif %}
 </section>

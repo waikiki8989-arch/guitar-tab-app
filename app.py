@@ -11,6 +11,7 @@ from melody import FILTER_FIELDS, MelodySelection, filter_notes, filter_options
 from musicxml_parser import MAX_XML_BYTES, parse_score
 from score_preview import build_preview
 from fingering import reconcile, apply_action
+from tab_score import editor_state, edit, build_tab_preview
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -24,11 +25,12 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
-def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, estimate_state=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, estimate_state=None, filename="", filters=None, **context):
     filters = filters or {}
     fingering_rows, fingering_error = (), None
     if selection is not None:
         fingering_state, fingering_rows, fingering_error = reconcile(selection, fingering_state)
+        tab_state = editor_state(selection, fingering_state, tab_state)
         context.update(
             notes=selection.notes,
             candidates=filter_notes(selection.notes, filters),
@@ -39,6 +41,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                 "estimate_state": estimate_state,
                 "notation": notation or {},
                 "fingering": fingering_state,
+                "tab_editor": tab_state,
             }),
         )
     else:
@@ -51,7 +54,10 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
     preview, preview_error = None, None
     if selection is not None and progression is not None:
         try:
-            preview = build_preview(selection, progression, notation, filename or 'メロディーとコード')
+            if fingering_rows:
+                preview = build_tab_preview(selection, progression, notation, fingering_state, fingering_rows, filename)
+            else:
+                preview = build_preview(selection, progression, notation, filename or 'メロディーとコード')
         except ValueError as exc:
             preview_error = str(exc)
     return render_template("index.html", chords=CHORDS.keys(), selection=selection,
@@ -59,6 +65,8 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                            source_labels=SOURCE_LABELS, estimate_state=estimate_state,
                            estimate_results=results, estimate_existing=existing,
                            preview=preview, preview_error=preview_error,
+                           tab_state=tab_state,
+                           tab_selected=next((r for r in fingering_rows if tab_state and r["note"].note_id == tab_state["selected"]), None),
                            fingering_state=fingering_state, fingering_rows=fingering_rows, fingering_error=fingering_error,
                            filename=filename, filters=filters, **context)
 
@@ -78,6 +86,7 @@ def index():
     progression = None
     notation = {}
     fingering_state = None
+    tab_state = None
     estimate_state = None
     estimate_form = None
     chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
@@ -104,6 +113,7 @@ def index():
                     estimate_state = state.get("estimate_state")
                     notation = state.get("notation", {})
                     fingering_state = state.get("fingering")
+                    tab_state = state.get("tab_editor")
             if mode == "musicxml":
                 uploaded = request.files.get("musicxml")
                 if uploaded is None or not uploaded.filename:
@@ -116,12 +126,19 @@ def index():
                 progression = new_progression
                 notation = imported.notation
                 fingering_state = None
+                tab_state = None
                 estimate_state = None
                 filename, filters = uploaded.filename, {}
+            elif mode == "tab_editor":
+                if selection is None:
+                    raise ValueError("先にMusicXMLファイルを読み込んでください。")
+                fingering_state, tab_state = edit(selection, fingering_state, tab_state, request.form.get("tab_action", ""), request.form)
+                message = "TAB譜の選択・運指を更新しました。"
             elif mode == "fingering":
                 if selection is None:
                     raise ValueError("先にMusicXMLファイルを読み込んでください。")
                 fingering_state = apply_action(selection, fingering_state, request.form.get("fingering_action", ""), request.form)
+                tab_state = None
                 message = "ギター用の運指を更新しました。タイでつながる音は同じ運指にそろえています。"
             elif mode == "estimate":
                 if selection is None or progression is None:
@@ -231,6 +248,7 @@ def index():
         progression=progression,
         notation=notation,
         fingering_state=fingering_state,
+        tab_state=tab_state,
         estimate_state=estimate_state,
         estimate_form=estimate_form,
         chord_form=chord_form,
