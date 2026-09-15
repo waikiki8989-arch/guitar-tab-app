@@ -38,6 +38,7 @@
             {% if progression is not none %}{% include 'chord_estimator.html' %}{% endif %}
             {% if progression is not none %}{% include 'chord_editor.html' %}{% endif %}
             {% include 'melody_editor.html' %}
+            {% include 'fingering_editor.html' %}
             <section>
                 <h2>読み込んだ音符</h2>
                 <p>{{ filename }} — {{ notes|length }}音</p>

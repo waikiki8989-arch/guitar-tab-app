@@ -10,6 +10,7 @@ from chord_estimation import DEFAULT_SETTINGS, estimate_sections
 from melody import FILTER_FIELDS, MelodySelection, filter_notes, filter_options
 from musicxml_parser import MAX_XML_BYTES, parse_score
 from score_preview import build_preview
+from fingering import reconcile, apply_action
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -23,9 +24,11 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
-def render_page(*, selection=None, progression=None, notation=None, estimate_state=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, estimate_state=None, filename="", filters=None, **context):
     filters = filters or {}
+    fingering_rows, fingering_error = (), None
     if selection is not None:
+        fingering_state, fingering_rows, fingering_error = reconcile(selection, fingering_state)
         context.update(
             notes=selection.notes,
             candidates=filter_notes(selection.notes, filters),
@@ -35,6 +38,7 @@ def render_page(*, selection=None, progression=None, notation=None, estimate_sta
                 "progression": progression.to_data() if progression is not None else None,
                 "estimate_state": estimate_state,
                 "notation": notation or {},
+                "fingering": fingering_state,
             }),
         )
     else:
@@ -55,6 +59,7 @@ def render_page(*, selection=None, progression=None, notation=None, estimate_sta
                            source_labels=SOURCE_LABELS, estimate_state=estimate_state,
                            estimate_results=results, estimate_existing=existing,
                            preview=preview, preview_error=preview_error,
+                           fingering_state=fingering_state, fingering_rows=fingering_rows, fingering_error=fingering_error,
                            filename=filename, filters=filters, **context)
 
 
@@ -72,6 +77,7 @@ def index():
     selection = None
     progression = None
     notation = {}
+    fingering_state = None
     estimate_state = None
     estimate_form = None
     chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
@@ -97,6 +103,7 @@ def index():
                         progression = ChordProgression.from_data(state["progression"])
                     estimate_state = state.get("estimate_state")
                     notation = state.get("notation", {})
+                    fingering_state = state.get("fingering")
             if mode == "musicxml":
                 uploaded = request.files.get("musicxml")
                 if uploaded is None or not uploaded.filename:
@@ -108,8 +115,14 @@ def index():
                 selection = MelodySelection(imported.notes)
                 progression = new_progression
                 notation = imported.notation
+                fingering_state = None
                 estimate_state = None
                 filename, filters = uploaded.filename, {}
+            elif mode == "fingering":
+                if selection is None:
+                    raise ValueError("先にMusicXMLファイルを読み込んでください。")
+                fingering_state = apply_action(selection, fingering_state, request.form.get("fingering_action", ""), request.form)
+                message = "ギター用の運指を更新しました。タイでつながる音は同じ運指にそろえています。"
             elif mode == "estimate":
                 if selection is None or progression is None:
                     raise ValueError("先にMusicXMLファイルを読み込んでください。")
@@ -217,6 +230,7 @@ def index():
         selection=selection,
         progression=progression,
         notation=notation,
+        fingering_state=fingering_state,
         estimate_state=estimate_state,
         estimate_form=estimate_form,
         chord_form=chord_form,

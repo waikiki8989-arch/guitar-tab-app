@@ -74,3 +74,6 @@ summary { cursor: pointer; }
 .score-scroll { overflow-x: auto; background: white; border: 1px solid #ddd; }
 #score-sheet { min-width: 640px; position: relative; }
 button:disabled { opacity: .5; cursor: default; }
+
+.fingering-table td:nth-child(7) { white-space: normal; min-width: 16em; }
+.fingering-table form { margin-top: 0; }
