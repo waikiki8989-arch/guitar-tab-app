@@ -54,6 +54,8 @@ def main():
             assert '未変換' not in rows.nth(4).locator('td').nth(5).inner_text()
             page.wait_for_function('window.scorePlayer && !document.getElementById("play-score").disabled')
             assert page.locator('#score-sheet svg').count() > 0
+            if page.locator('#allow-missing-playback').count():
+                page.locator('#allow-missing-playback').check()
             page.locator('#play-score').click()
             page.wait_for_function('scorePlayer.state === "playing"')
             page.locator('#max-fret').fill('12')

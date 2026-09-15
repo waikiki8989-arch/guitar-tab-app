@@ -59,6 +59,10 @@ class ScorePlayer {
 
     async play() {
         if (['playing', 'starting'].includes(this.state)) return;
+        if (this.data.missing?.length && !document.getElementById('allow-missing-playback')?.checked) {
+            this.status.textContent = '未変換の箇所を確認し、確認欄にチェックを入れてください。';
+            return;
+        }
         const generation = ++this.generation;
         this.state = 'starting';
         this.controls();
@@ -183,9 +187,15 @@ class ScorePlayer {
             autoResize: true, backend: 'svg', drawTitle: false, drawPartNames: false,
             drawMeasureNumbers: true, followCursor: true,
         });
+        if (data.guitar) {
+            osmd.EngravingRules.MetronomeMarkYShift = -4;
+            osmd.EngravingRules.MinSkyBottomDistBetweenSystems = 8;
+            osmd.EngravingRules.PageBottomMargin = 10;
+        }
         await osmd.load(data.xml);
         osmd.render();
         window.scorePlayer = new ScorePlayer(data, osmd);
+        if (data.guitar) window.tabEditor = new TabEditor(data, osmd);
     } catch (error) {
         status.textContent = '五線譜を表示できませんでした。音符の選択や記譜内容を確認してください。';
         console.error(error);

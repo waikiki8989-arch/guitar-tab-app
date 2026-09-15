@@ -1,0 +1,46 @@
+<div class="tab-editor">
+    <p>ギター五線譜は記譜より1オクターブ低く鳴ります。TABは上から1弦、下が6弦です。
+        変換設定のオクターブ移動とは別の記譜上の差です。</p>
+    <p>TAB下の「4分」「2分」などは音価、末尾の「·」は付点です。三連符は譜面の「3」で示します。</p>
+    <p>TABまたは五線譜の音符を選び、同じ実音の別運指へ変更できます。変更は固定運指として反映します。</p>
+    <form method="post" id="tab-select-form">
+        <input type="hidden" name="mode" value="tab_editor">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <label for="tab-note-id">編集する音符</label>
+        <select id="tab-note-id" name="note_id">
+            {% for row in fingering_rows %}<option value="{{ row.note.note_id }}" {% if tab_state.selected == row.note.note_id %}selected{% endif %}>小節{{ row.note.measure }}・開始{{ row.note.start }}・{{ row.guitar_pitch }}</option>{% endfor %}
+        </select>
+        <button name="tab_action" value="select" id="tab-select-submit">音符を選択</button>
+    </form>
+    {% if tab_selected %}
+    <form method="post" id="tab-edit-form">
+        <input type="hidden" name="mode" value="tab_editor">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <input type="hidden" name="note_id" value="{{ tab_selected.note.note_id }}">
+        <p>選択中：小節{{ tab_selected.note.measure }}・開始{{ tab_selected.note.start }}・実音{{ tab_selected.guitar_pitch }}／
+            {% if tab_selected.position %}{{ tab_selected.position[0] }}弦 {{ tab_selected.position[1] }}フレット{% else %}未変換{% endif %}／
+            {{ '固定あり' if tab_selected.locked else '固定なし' }}</p>
+        {% if tab_selected.reason %}<p class="error">{{ tab_selected.reason }}</p>{% endif %}
+        {% if tab_selected.candidates %}
+        <label for="tab-position">同じ実音の運指候補</label>
+        <select name="position" id="tab-position">{% for p in tab_selected.candidates %}<option value="{{ p[0] }}:{{ p[1] }}" {% if p == tab_selected.position %}selected{% endif %}>{{ p[0] }}弦 {{ p[1] }}フレット</option>{% endfor %}</select>
+        <button name="tab_action" value="choose">TABの運指を変更・固定</button>
+        {% endif %}
+        {% if tab_selected.locked %}<button name="tab_action" value="unlock">TABの固定を解除</button>{% endif %}
+    </form>
+    {% endif %}
+    <form method="post" class="button-row" id="tab-history-form">
+        <input type="hidden" name="mode" value="tab_editor">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <button name="tab_action" value="undo" {% if not tab_state.undo %}disabled{% endif %}>元に戻す</button>
+        <button name="tab_action" value="redo" {% if not tab_state.redo %}disabled{% endif %}>やり直す</button>
+    </form>
+    <p>このTAB編集の直近20件を戻せます。楽譜・メロディー・変換設定の変更や、下の運指一覧での編集時に履歴をリセットします。</p>
+    {% if preview.missing %}
+    <div class="melody-warning">
+        <p>次の音は未変換のため、再生では無音になります。TAB上は×で示します。</p>
+        <ul>{% for note in preview.missing %}<li>小節{{ note.measure }}・開始{{ note.start }}：{{ note.reason }}</li>{% endfor %}</ul>
+        <label><input type="checkbox" id="allow-missing-playback">未変換の箇所を確認し、残りの音を再生する</label>
+    </div>
+    {% endif %}
+</div>
