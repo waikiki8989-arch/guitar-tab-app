@@ -83,3 +83,7 @@ button:disabled { opacity: .5; cursor: default; }
 .tab-hit:hover, .tab-hit:focus { fill: #2162a21a; stroke: #2162a2; outline: none; }
 .tab-hit.tab-selected { fill: #ed8b0026; stroke: #ad6100; }
 .tab-hit.tab-missing { stroke: #c62828; stroke-dasharray: 3 2; }
+.arrangement-legend [data-role="bass"] { color: #1565c0; }
+.arrangement-legend [data-role="accompaniment"] { color: #8e247a; }
+#arr-edit-form, #arr-generate-form { max-width: 650px; }
+[data-arr-note] form { margin-top: 0; }

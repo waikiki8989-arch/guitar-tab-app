@@ -1,0 +1,77 @@
+{% if selection.confirmed and fingering_rows or arrangement_state is not none %}
+<section aria-labelledby="arrangement-heading">
+    <h2 id="arrangement-heading">ソロギター編曲</h2>
+    <p>メロディーにベース・伴奏を重ねます。開始位置と長さは四分音符＝1、分数も入力できます。</p>
+    {% macro state_fields() %}
+    <input type="hidden" name="mode" value="arrangement">
+    <input type="hidden" name="score_state" value="{{ state_token }}">
+    {% endmacro %}
+    {% if not selection.confirmed or not fingering_rows %}
+    <p class="melody-warning">追加音は保持しています。メロディーを再確定し、運指を確認してから編曲を続けてください。</p>
+    {% elif arrangement_state is none %}
+    <form method="post">{{ state_fields() }}<button name="arr_action" value="start">ソロギター編曲を始める</button></form>
+    {% else %}
+    <p class="arrangement-legend"><span data-role="melody">黒：メロディー</span> ／ <span data-role="bass">青：ベース</span> ／ <span data-role="accompaniment">紫：伴奏</span></p>
+    <p>メロディーの音高・リズムはそのままに、追加音を別に編集します。演奏上の注意は目安です。指番号やバレーは判定しません。</p>
+    <form method="post" class="button-row">{{ state_fields() }}
+        <button name="arr_action" value="undo" {% if not arrangement_state.undo %}disabled{% endif %}>編曲を元に戻す</button>
+        <button name="arr_action" value="redo" {% if not arrangement_state.redo %}disabled{% endif %}>編曲をやり直す</button>
+    </form>
+    <h3>区間の候補を作る</h3>
+    <form method="post" id="arr-generate-form">{{ state_fields() }}
+        <label for="arr-measure">対象小節</label>
+        <select id="arr-measure" name="measure_id">{% for m in progression.measures %}<option value="{{ m.measure_id }}">小節{{ m.number }}（開始{{ m.start }}・長さ{{ m.duration }}）</option>{% endfor %}</select>
+        <label for="arr-start">小節内の開始（空欄は0）</label><input id="arr-start" name="start_offset" placeholder="0">
+        <label for="arr-end">小節内の終了（空欄は小節末）</label><input id="arr-end" name="end_offset" placeholder="小節末">
+        <label for="arr-pattern">追加する音</label><select id="arr-pattern" name="pattern"><option value="bass">ベースのみ</option><option value="full">ベースと伴奏</option></select>
+        <button name="arr_action" value="generate">編曲候補を作る</button>
+    </form>
+    {% if arrangement_state.candidate %}
+    <div class="estimate-result" id="arr-candidate">
+        <h3>未採用の候補：開始{{ arrangement_state.candidate.start }}〜{{ arrangement_state.candidate.end }}</h3>
+        <p>コードごとに持続音を提案します。使用中の弦を避け、次に同じ弦を使う音の直前で長さを切ります。</p>
+        {% for reason in arrangement_state.candidate.reasons %}<p>{{ reason }}</p>{% endfor %}
+        <ul>{% for n in arrangement_state.candidate.notes %}<li>{{ arrangement_roles[n.role] }}：{{ n.pitch }}・開始{{ n.start }}・長さ{{ n.duration }}・{{ n.string }}弦 {{ n.fret }}フレット</li>{% endfor %}</ul>
+        {% if arrangement_state.candidate.warnings %}<ul class="melody-warning">{% for w in arrangement_state.candidate.warnings %}<li>小節{{ w.measure }}・開始{{ w.start }}〜{{ w.end }}：{{ w.reason }}</li>{% endfor %}</ul>{% endif %}
+        <button type="button" id="play-arr-candidate" disabled>候補を含めて区間を試聴</button>
+        <form method="post" class="button-row">{{ state_fields() }}
+            <button name="arr_action" value="adopt" {% if not arrangement_state.candidate.notes %}disabled{% endif %}>候補を採用</button>
+            <button name="arr_action" value="skip">候補を見送る</button>
+        </form>
+    </div>
+    {% endif %}
+    <h3>{{ '追加音を編集' if arrangement_form.arr_note_id else '音を手動で追加' }}</h3>
+    <form method="post" id="arr-edit-form">{{ state_fields() }}
+        <input type="hidden" name="arr_note_id" value="{{ arrangement_form.arr_note_id }}">
+        <label for="arr-role">役割</label><select id="arr-role" name="role">{% for role in ('bass', 'accompaniment') %}<option value="{{ role }}" {% if arrangement_form.role == role %}selected{% endif %}>{{ arrangement_roles[role] }}</option>{% endfor %}</select>
+        <label for="arr-note-measure">小節</label><select id="arr-note-measure" name="measure_id">{% for m in progression.measures %}<option value="{{ m.measure_id }}" {% if arrangement_form.measure_id == m.measure_id %}selected{% endif %}>小節{{ m.number }}（開始{{ m.start }}）</option>{% endfor %}</select>
+        <label for="arr-offset">小節内の開始</label><input id="arr-offset" name="offset" value="{{ arrangement_form.offset }}" required>
+        <label for="arr-duration">長さ</label><input id="arr-duration" name="duration" value="{{ arrangement_form.duration }}" required>
+        <label for="arr-string">弦</label><select id="arr-string" name="string">{% for string in range(1, 7) %}<option value="{{ string }}" {% if arrangement_form.string == string %}selected{% endif %}>{{ string }}弦</option>{% endfor %}</select>
+        <label for="arr-fret">フレット（弦・フレットで実音も変わります）</label><input type="number" id="arr-fret" name="fret" min="0" max="24" value="{{ arrangement_form.fret }}" required>
+        <button name="arr_action" value="save">{{ '追加音の変更を反映' if arrangement_form.arr_note_id else '音を追加' }}</button>
+        {% if arrangement_form.arr_note_id %}<button name="arr_action" value="cancel" formnovalidate>新しい音の入力に戻る</button>{% endif %}
+    </form>
+    <form method="post" id="arr-select-form" hidden>{{ state_fields() }}
+        <input name="arr_note_id" id="arr-select-id"><button name="arr_action" value="edit" id="arr-select-submit">追加音を選択</button>
+    </form>
+    <div class="score-table"><table>
+        <caption>追加したベース・伴奏</caption>
+        <thead><tr><th>役割</th><th>音名</th><th>開始</th><th>長さ</th><th>弦・フレット</th><th>操作</th></tr></thead>
+        <tbody>{% for n in arrangement_rows %}<tr data-arr-note="{{ n.note_id }}" {% if arrangement_state.selected == n.note_id %}class="selected-note"{% endif %}>
+            <td>{{ arrangement_roles[n.role] }}</td><td>{{ n.pitch }}</td><td>{{ n.start }}</td><td>{{ n.duration }}</td><td>{{ n.string }}弦 {{ n.fret }}フレット</td>
+            <td><form method="post" class="button-row">{{ state_fields() }}<input type="hidden" name="arr_note_id" value="{{ n.note_id }}"><button name="arr_action" value="edit">編集</button><button name="arr_action" value="delete">削除</button></form></td>
+        </tr>{% else %}<tr><td colspan="6">まだ追加音はありません。</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <h3>演奏上の注意</h3>
+    <form method="post">{{ state_fields() }}
+        <label for="arr-span">同時に押さえるフレットの広がりの目安（開放弦を除く）</label><input type="number" id="arr-span" name="span_limit" min="0" max="24" value="{{ arrangement_state.span_limit }}">
+        <button name="arr_action" value="span">広がりの目安を反映</button>
+    </form>
+    {% if arrangement_warnings %}<ul class="melody-warning" id="arr-warnings">{% for w in arrangement_warnings %}<li>小節{{ w.measure }}・開始{{ w.start }}〜{{ w.end }}：{{ w.reason }}</li>{% endfor %}</ul>{% else %}<p>現在のチェックで注意箇所はありません。</p>{% endif %}
+    <details><summary>区間ごとの押弦の広がり</summary><ul>{% for span in arrangement_spans %}<li>開始{{ span.start }}〜{{ span.end }}：{{ span.span }}フレット差</li>{% endfor %}</ul></details>
+    <form method="post">{{ state_fields() }}<button name="arr_action" value="review">メロディー・運指の変更を確認済みにする</button></form>
+    <p>追加音の直近20件を戻せます。メロディー・運指・コードを変更すると候補と編曲履歴をリセットし、追加音は保持します。</p>
+    {% endif %}
+</section>
+{% endif %}

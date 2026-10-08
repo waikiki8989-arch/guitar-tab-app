@@ -17,6 +17,8 @@ class ScorePlayer {
         }
         this.end = this.secondsAt(data.end);
         this.events = data.events.map(event => ({...event, start: this.secondsAt(event.start), end: this.secondsAt(event.end)}));
+        this.candidateEvents = data.candidate_preview?.events.map(event => ({...event, start: this.secondsAt(event.start), end: this.secondsAt(event.end)}));
+        this.audition = false;
         this.status = document.getElementById('playback-status');
         this.positionLabel = document.getElementById('playback-position');
         this.playButton = document.getElementById('play-score');
@@ -25,6 +27,11 @@ class ScorePlayer {
         this.playButton.onclick = () => this.play();
         this.pauseButton.onclick = () => this.pause();
         this.stopButton.onclick = () => this.stop();
+        this.candidateButton = document.getElementById('play-arr-candidate');
+        if (this.candidateButton && this.candidateEvents?.length) {
+            this.candidateButton.disabled = false;
+            this.candidateButton.onclick = () => this.previewCandidate();
+        }
         document.getElementById('playback-speed').onchange = event => this.configure('rate', Number(event.target.value));
         document.getElementById('playback-mode').onchange = event => this.configure('mode', event.target.value);
         // Cancel scheduled and sounding notes before any edit/upload navigation.
@@ -48,7 +55,18 @@ class ScorePlayer {
     }
 
     get position() {
-        return this.state === 'playing' ? Math.min(this.end, this.offset + (this.context.currentTime - this.anchor) * this.rate) : this.offset;
+        return this.state === 'playing' ? Math.min(this.playbackEnd, this.offset + (this.context.currentTime - this.anchor) * this.rate) : this.offset;
+    }
+
+    get playbackEnd() {
+        return this.audition ? this.secondsAt(this.data.candidate_preview.end) : this.end;
+    }
+
+    previewCandidate() {
+        this.stop();
+        this.audition = true;
+        this.offset = this.secondsAt(this.data.candidate_preview.start);
+        return this.play();
     }
 
     controls() {
@@ -73,11 +91,12 @@ class ScorePlayer {
             await this.context.resume();
             if (generation !== this.generation) return;
             if (this.context.state !== 'running') throw new Error('音声を開始できません。ブラウザの音声設定を確認してください。');
-            this.queue = this.events.filter(event => event.end > this.offset && (this.mode === 'all' || event.channel === 'melody'));
+            this.queue = (this.audition ? this.candidateEvents : this.events).filter(event =>
+                event.end > this.offset && (this.audition || this.mode === 'all' || event.channel === 'melody'));
             this.next = 0;
             this.anchor = this.context.currentTime;
             this.state = 'playing';
-            this.status.textContent = '再生中';
+            this.status.textContent = this.audition ? '未採用の候補を含めて試聴中' : '再生中';
             this.controls();
             this.tick();
             if (this.state === 'playing') this.timer = setInterval(() => this.tick(), 25);
@@ -117,7 +136,7 @@ class ScorePlayer {
         const position = this.position;
         while (this.next < this.queue.length && this.queue[this.next].start <= position + 0.12 * this.rate) this.sound(this.queue[this.next++]);
         this.showPosition(position);
-        if (position >= this.end) this.stop('再生が終了しました。');
+        if (position >= this.playbackEnd) this.stop('再生が終了しました。');
     }
 
     showPosition(seconds) {
@@ -161,6 +180,7 @@ class ScorePlayer {
         this.silence();
         this.state = 'stopped';
         this.offset = 0;
+        this.audition = false;
         this.cursorBeat = 0;
         this.osmd.cursor.reset();
         this.osmd.cursor.hide();

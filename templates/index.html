@@ -35,6 +35,7 @@
 
         {% if notes is not none %}
             {% include 'score_preview.html' %}
+            {% include 'arrangement_editor.html' %}
             {% if progression is not none %}{% include 'chord_estimator.html' %}{% endif %}
             {% if progression is not none %}{% include 'chord_editor.html' %}{% endif %}
             {% include 'melody_editor.html' %}

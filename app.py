@@ -12,6 +12,8 @@ from musicxml_parser import MAX_XML_BYTES, parse_score
 from score_preview import build_preview
 from fingering import reconcile, apply_action
 from tab_score import editor_state, edit, build_tab_preview
+import arrangement
+from arrangement_score import build_arrangement_preview
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -25,12 +27,24 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
-def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, estimate_state=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, filename="", filters=None, **context):
     filters = filters or {}
     fingering_rows, fingering_error = (), None
+    arrangement_warnings, arrangement_spans, arrangement_rows = [], [], []
+    arrangement_form = {"arr_note_id": "", "role": "bass", "measure_id": "", "offset": "0", "duration": "1", "string": 6, "fret": 0}
     if selection is not None:
         fingering_state, fingering_rows, fingering_error = reconcile(selection, fingering_state)
         tab_state = editor_state(selection, fingering_state, tab_state)
+        if arrangement_state is not None and progression is not None:
+            arrangement_state = arrangement.sync(arrangement_state, selection, fingering_state, progression, fingering_rows)
+            arrangement_warnings, arrangement_spans = arrangement.validate(arrangement_state, arrangement.melody_notes(fingering_rows), progression, fingering_state['max_fret'])
+            arrangement_rows = arrangement.extra_notes(arrangement_state)
+            selected = next((n for n in arrangement_rows if n.note_id == arrangement_state.get('selected')), None)
+            if selected:
+                measure = progression.measure_at(selected.start)
+                arrangement_form = {'arr_note_id': selected.note_id, 'role': selected.role, 'measure_id': measure.measure_id,
+                                    'offset': str(selected.start - measure.start), 'duration': str(selected.duration),
+                                    'string': selected.string, 'fret': selected.fret}
         context.update(
             notes=selection.notes,
             candidates=filter_notes(selection.notes, filters),
@@ -42,6 +56,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                 "notation": notation or {},
                 "fingering": fingering_state,
                 "tab_editor": tab_state,
+                "arrangement": arrangement_state,
             }),
         )
     else:
@@ -54,7 +69,9 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
     preview, preview_error = None, None
     if selection is not None and progression is not None:
         try:
-            if fingering_rows:
+            if fingering_rows and arrangement_state is not None:
+                preview = build_arrangement_preview(selection, progression, notation, fingering_state, fingering_rows, arrangement_state, filename)
+            elif fingering_rows:
                 preview = build_tab_preview(selection, progression, notation, fingering_state, fingering_rows, filename)
             else:
                 preview = build_preview(selection, progression, notation, filename or 'メロディーとコード')
@@ -65,6 +82,9 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                            source_labels=SOURCE_LABELS, estimate_state=estimate_state,
                            estimate_results=results, estimate_existing=existing,
                            preview=preview, preview_error=preview_error,
+                           arrangement_state=arrangement_state, arrangement_rows=arrangement_rows,
+                           arrangement_warnings=arrangement_warnings, arrangement_spans=arrangement_spans,
+                           arrangement_form=arrangement_form, arrangement_roles=arrangement.ROLES,
                            tab_state=tab_state,
                            tab_selected=next((r for r in fingering_rows if tab_state and r["note"].note_id == tab_state["selected"]), None),
                            fingering_state=fingering_state, fingering_rows=fingering_rows, fingering_error=fingering_error,
@@ -87,6 +107,7 @@ def index():
     notation = {}
     fingering_state = None
     tab_state = None
+    arrangement_state = None
     estimate_state = None
     estimate_form = None
     chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
@@ -114,6 +135,7 @@ def index():
                     notation = state.get("notation", {})
                     fingering_state = state.get("fingering")
                     tab_state = state.get("tab_editor")
+                    arrangement_state = state.get("arrangement")
             if mode == "musicxml":
                 uploaded = request.files.get("musicxml")
                 if uploaded is None or not uploaded.filename:
@@ -127,12 +149,26 @@ def index():
                 notation = imported.notation
                 fingering_state = None
                 tab_state = None
+                arrangement_state = None
                 estimate_state = None
                 filename, filters = uploaded.filename, {}
+            elif mode == "arrangement":
+                if selection is None or progression is None:
+                    raise ValueError("先にMusicXMLファイルを読み込んでください。")
+                fingering_state, rows, problem = reconcile(selection, fingering_state)
+                if problem:
+                    raise ValueError(problem)
+                arrangement_state = arrangement.act(arrangement_state, selection, fingering_state, progression, rows,
+                                                     request.form.get('arr_action', ''), request.form)
+                if tab_state:
+                    tab_state['selected'] = None
+                message = "編曲の操作を反映しました。演奏上の注意を確認してください。"
             elif mode == "tab_editor":
                 if selection is None:
                     raise ValueError("先にMusicXMLファイルを読み込んでください。")
                 fingering_state, tab_state = edit(selection, fingering_state, tab_state, request.form.get("tab_action", ""), request.form)
+                if arrangement_state:
+                    arrangement_state["selected"] = None
                 message = "TAB譜の選択・運指を更新しました。"
             elif mode == "fingering":
                 if selection is None:
@@ -249,6 +285,7 @@ def index():
         notation=notation,
         fingering_state=fingering_state,
         tab_state=tab_state,
+        arrangement_state=arrangement_state,
         estimate_state=estimate_state,
         estimate_form=estimate_form,
         chord_form=chord_form,
