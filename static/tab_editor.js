@@ -13,8 +13,9 @@ class TabEditor {
     constructor(data, osmd) {
         this.data = data;
         this.osmd = osmd;
-        this.byTime = new Map(data.note_map.map(note => [note.start.toFixed(7), note]));
-        this.selected = document.querySelector('#tab-edit-form input[name=note_id]')?.value;
+        this.byTime = new Map(data.note_map.map(note => [`${note.voice || 1}:${note.start.toFixed(7)}`, note]));
+        this.selected = document.querySelector('#arr-edit-form input[name=arr_note_id]')?.value ||
+            document.querySelector('#tab-edit-form input[name=note_id]')?.value;
         const render = osmd.render.bind(osmd);
         osmd.render = (...args) => { render(...args); this.decorate(); };
         this.decorate();
@@ -22,6 +23,11 @@ class TabEditor {
 
     select(noteId) {
         window.scorePlayer?.stop();
+        if (this.data.arrangement && this.data.note_map.some(n => n.note_id === noteId && n.role !== 'melody')) {
+            document.getElementById('arr-select-id').value = noteId;
+            document.getElementById('arr-select-form').requestSubmit(document.getElementById('arr-select-submit'));
+            return;
+        }
         document.getElementById('tab-note-id').value = noteId;
         document.getElementById('tab-select-form').requestSubmit(document.getElementById('tab-select-submit'));
     }
@@ -38,12 +44,15 @@ class TabEditor {
                     for (const voice of entry.graphicalVoiceEntries) {
                         for (const note of voice.notes) {
                             const beat = note.sourceNote.getAbsoluteTimestamp().RealValue * 4;
+                            const voiceId = note.sourceNote.ParentVoiceEntry.ParentVoice.VoiceId;
+                            const key = `${this.data.arrangement ? voiceId : 1}:${beat.toFixed(7)}`;
                             const element = note.getSVGGElement();
                             if (staff === 0 && element) upperGraphics.set(beat, element);
                             if (note.sourceNote.isRest()) {
-                                if (staff === 0 && element) upperRests.set(beat, element);
-                                if (staff === 1 && upperRests.has(beat)) {
-                                    const source = upperRests.get(beat);
+                                if (this.data.arrangement && voiceId !== 1) continue;
+                                if (staff === 0 && element) upperRests.set(key, element);
+                                if (staff === 1 && upperRests.has(key)) {
+                                    const source = upperRests.get(key);
                                     const copy = source.cloneNode(true);
                                     copy.removeAttribute('id');
                                     copy.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
@@ -54,7 +63,7 @@ class TabEditor {
                                 }
                                 continue;
                             }
-                            const mapped = this.byTime.get(beat.toFixed(7));
+                            const mapped = this.byTime.get(key);
                             if (!mapped) continue;
                             const svg = element?.ownerSVGElement || upperGraphics.get(beat)?.ownerSVGElement;
                             if (!svg) continue;
@@ -67,7 +76,8 @@ class TabEditor {
                             const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                             for (const [key, value] of Object.entries({x: box.x - 3, y: box.y - 3, width: box.width + 6, height: box.height + 6,
                                 rx: 4, tabindex: 0, role: 'button', 'data-tab-note': mapped.note_id, 'data-staff': staff,
-                                'aria-label': `開始${mapped.start}の${staff === 1 ? 'TAB' : '五線譜'}音符を選択${mapped.missing ? '（未変換）' : ''}`,
+                                'data-role': mapped.role || 'melody',
+                                'aria-label': `${({melody: 'メロディー', bass: 'ベース', accompaniment: '伴奏'})[mapped.role || 'melody']}・開始${mapped.start}の${staff === 1 ? 'TAB' : '五線譜'}音符を選択${mapped.missing ? '（未変換）' : ''}`,
                                 'aria-pressed': String(mapped.note_id === this.selected)})) rect.setAttribute(key, value);
                             rect.classList.add('tab-hit');
                             rect.classList.toggle('tab-selected', mapped.note_id === this.selected);
@@ -80,7 +90,8 @@ class TabEditor {
                             if (staff === 1) {
                                 const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                                 label.setAttribute('x', note.vfnote[0].getAbsoluteX());
-                                label.setAttribute('y', measure.stave.getYForLine(5) + 56);
+                                label.setAttribute('y', measure.stave.getYForLine(5) + 56 + ((mapped.voice || 1) - 1) * 13);
+                                label.setAttribute('fill', ({bass: '#1565C0', accompaniment: '#8E247A'})[mapped.role] || '#222222');
                                 label.setAttribute('text-anchor', 'middle');
                                 label.setAttribute('font-size', '10');
                                 label.classList.add('tab-rhythm');

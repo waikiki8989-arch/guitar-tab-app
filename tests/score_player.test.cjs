@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 // Test audio scheduling and UI state without requiring speakers or a browser.
-function setup({resume, end = 8} = {}) {
+function setup({resume, end = 8, candidate} = {}) {
     const elements = new Map();
     const listeners = {};
     const timers = new Map();
@@ -55,7 +55,7 @@ function setup({resume, end = 8} = {}) {
     };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../static/score_player.js'), 'utf8') +
         '\nglobalThis.Player = ScorePlayer;', sandbox);
-    const player = new sandbox.Player({end, tempos: [{start: 0, bpm: 120}, {start: 4, bpm: 60}],
+    const player = new sandbox.Player({end, candidate_preview: candidate, tempos: [{start: 0, bpm: 120}, {start: 4, bpm: 60}],
         events: [
             {start: 0, end: 4, midi: 69, channel: 'melody'},
             {start: 0, end: 4, midi: 48, channel: 'chord'},
@@ -167,4 +167,30 @@ test('unconverted notes require acknowledgement before audio starts', async () =
     elements.get('allow-missing-playback').checked = true;
     await player.play();
     assert.equal(player.state, 'playing');
+});
+
+test('candidate audition includes all roles, clips playback and preserves normal events', async () => {
+    const {player, oscillators} = setup({candidate: {start: 2, end: 4, events: [
+        {start: 2, end: 4, midi: 69, channel: 'melody'},
+        {start: 2, end: 4, midi: 40, channel: 'bass'},
+        {start: 2, end: 4, midi: 48, channel: 'accompaniment'},
+    ]}});
+    const original = JSON.stringify(player.events);
+    await player.previewCandidate();
+    assert.equal(player.offset, 1);
+    assert.equal(player.active.size, 3);
+    assert.equal(oscillators[0].stopTime, 1);
+    player.context.currentTime = 0.25;
+    player.pause();
+    assert.equal(player.offset, 1.25);
+    await player.play();
+    assert.equal(player.active.size, 3);
+    player.context.currentTime = 1;
+    player.tick();
+    assert.equal(player.state, 'stopped');
+    assert.equal(player.audition, false);
+    assert.equal(JSON.stringify(player.events), original);
+    await player.play();
+    assert.equal(player.active.size, 1);
+    assert.equal(player.offset, 0);
 });
