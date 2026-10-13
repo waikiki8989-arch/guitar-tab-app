@@ -7,7 +7,7 @@
     {% elif fingering_error %}
         <p class="error" role="alert">{{ fingering_error }}</p>
     {% else %}
-        <form method="post">
+        <form method="post" action="{{ url_for('index') }}">
             <input type="hidden" name="mode" value="fingering">
             <input type="hidden" name="score_state" value="{{ state_token }}">
             <label for="max-fret">使用するフレット上限（0〜24）</label>
@@ -35,7 +35,7 @@
                         <td>{% if row.locked %}固定あり（{{ row.saved_lock[0] }}弦 {{ row.saved_lock[1] }}フレット）{% else %}固定なし{% endif %}
                             {% if row.reason %}<p class="error">{{ row.reason }}</p>{% endif %}</td>
                         <td>
-                            <form method="post">
+                            <form method="post" action="{{ url_for('index') }}">
                                 <input type="hidden" name="mode" value="fingering">
                                 <input type="hidden" name="score_state" value="{{ state_token }}">
                                 <input type="hidden" name="note_id" value="{{ row.note.note_id }}">

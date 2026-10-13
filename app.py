@@ -1,8 +1,9 @@
 from pathlib import Path
+from io import BytesIO
 import os
 import secrets
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, send_file, jsonify
 from itsdangerous import BadData, URLSafeTimedSerializer
 
 from chord_progression import ChordProgression, KIND_LABELS, SOURCE_LABELS
@@ -14,12 +15,14 @@ from fingering import reconcile, apply_action
 from tab_score import editor_state, edit, build_tab_preview
 import arrangement
 from arrangement_score import build_arrangement_preview
+import project
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = MAX_XML_BYTES + 64 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+app.config["MAX_FORM_MEMORY_SIZE"] = 12 * 1024 * 1024
 app.config["SECRET_KEY"] = os.environ.get("GUITAR_TAB_SECRET_KEY") or secrets.token_hex(32)
 
 
@@ -27,7 +30,7 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
-def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, filename="", filters=None, **context):
     filters = filters or {}
     fingering_rows, fingering_error = (), None
     arrangement_warnings, arrangement_spans, arrangement_rows = [], [], []
@@ -45,6 +48,9 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                 arrangement_form = {'arr_note_id': selected.note_id, 'role': selected.role, 'measure_id': measure.measure_id,
                                     'offset': str(selected.start - measure.start), 'duration': str(selected.duration),
                                     'string': selected.string, 'fret': selected.fret}
+        project_data = project.snapshot(selection, progression, notation or {'changes': [], 'warnings': []},
+                                        fingering_state, arrangement_state, filename)
+        project_state = project.track(project_data, project_state)
         context.update(
             notes=selection.notes,
             candidates=filter_notes(selection.notes, filters),
@@ -57,6 +63,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                 "fingering": fingering_state,
                 "tab_editor": tab_state,
                 "arrangement": arrangement_state,
+                "project": project_state,
             }),
         )
     else:
@@ -85,6 +92,8 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                            arrangement_state=arrangement_state, arrangement_rows=arrangement_rows,
                            arrangement_warnings=arrangement_warnings, arrangement_spans=arrangement_spans,
                            arrangement_form=arrangement_form, arrangement_roles=arrangement.ROLES,
+                           project_state=project_state,
+                           project_dirty=bool(project_state and project_state['current_digest'] != project_state['saved_digest']),
                            tab_state=tab_state,
                            tab_selected=next((r for r in fingering_rows if tab_state and r["note"].note_id == tab_state["selected"]), None),
                            fingering_state=fingering_state, fingering_rows=fingering_rows, fingering_error=fingering_error,
@@ -93,10 +102,53 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
 
 @app.errorhandler(413)
 def upload_too_large(error):
-    return render_page(error="アップロードが大きすぎます。ファイルは2 MiB以下にしてください。"), 413
+    return render_page(error="アップロードが大きすぎます。MusicXMLは2 MiB以下、プロジェクトは8 MiB以下にしてください。"), 413
+
+
+@app.post('/project/download')
+def download_project():
+    try:
+        state = state_serializer().loads(request.form.get('score_state', ''), max_age=8 * 60 * 60)
+        selection = MelodySelection.from_data(state['selection'])
+        progression = ChordProgression.from_data(state['progression'])
+        data = project.snapshot(selection, progression, state['notation'], state['fingering'],
+                                state['arrangement'], state['filename'])
+        metadata = project.track(data, state.get('project'))
+        content = project.dumps(data, metadata)
+        # This records the downloaded snapshot, not confirmation that the OS saved it.
+        metadata['saved_digest'] = metadata['current_digest']
+        state['project'] = metadata
+        if request.accept_mimetypes.best == 'application/json':
+            response = jsonify(content=content.decode('utf-8'), filename=project.filename(metadata['name']),
+                               state_token=state_serializer().dumps(state))
+        else:
+            response = send_file(BytesIO(content), mimetype='application/json', as_attachment=True,
+                                 download_name=project.filename(metadata['name']))
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except (BadData, KeyError, ValueError) as exc:
+        message = ('作業情報が無効または期限切れです。元の画面に戻り、プロジェクトを開き直してください。'
+                   if isinstance(exc, (BadData, KeyError)) else str(exc))
+        if request.accept_mimetypes.best == 'application/json':
+            return jsonify(error=message), 400
+        return render_template('project_download_error.html', error=message), 400
+
+
+def restore_project(document):
+    data = document['data']
+    selection = MelodySelection.from_data(data['selection'])
+    progression = ChordProgression.from_data(data['progression'])
+    fingering, rows, _ = reconcile(selection, data['fingering'])
+    extra = data['arrangement']
+    if extra is not None:
+        extra = {**arrangement.create(selection, fingering, progression, rows), **extra}
+    metadata = {**document['project'], 'saved_digest': project.digest(data, document['project']['name'])}
+    metadata['current_digest'] = metadata['saved_digest']
+    return selection, progression, fingering, extra, metadata
 
 
 @app.route("/", methods=["GET", "POST"])
+@app.post('/project/open', endpoint='open_project')
 def index():
     tab = None
     error = None
@@ -108,15 +160,17 @@ def index():
     fingering_state = None
     tab_state = None
     arrangement_state = None
+    project_state = None
     estimate_state = None
     estimate_form = None
     chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
     filters = {}
     filename = ""
     message = None
+    response_status = 200
 
     if request.method == "POST":
-        mode = request.form.get("mode", "frets")
+        mode = 'project_open' if request.path == '/project/open' else request.form.get("mode", "frets")
 
         try:
             token = request.form.get("score_state")
@@ -124,7 +178,7 @@ def index():
                 try:
                     state = state_serializer().loads(token, max_age=8 * 60 * 60)
                 except BadData as exc:
-                    if mode != "musicxml":
+                    if mode not in ("musicxml", "project_open"):
                         raise ValueError("作業情報が無効または期限切れです。楽譜を再度読み込んでください。") from exc
                 else:
                     selection = MelodySelection.from_data(state["selection"])
@@ -136,14 +190,21 @@ def index():
                     fingering_state = state.get("fingering")
                     tab_state = state.get("tab_editor")
                     arrangement_state = state.get("arrangement")
+                    project_state = state.get("project")
             if mode == "musicxml":
                 uploaded = request.files.get("musicxml")
                 if uploaded is None or not uploaded.filename:
                     raise ValueError("MusicXMLファイルを選択してください。")
                 if Path(uploaded.filename).suffix.lower() not in (".musicxml", ".xml"):
                     raise ValueError(".musicxml または .xml を選択してください。.mxl・PDF・画像は未対応です。")
-                imported = parse_score(uploaded.read(MAX_XML_BYTES + 1))
+                raw = uploaded.read(MAX_XML_BYTES + 64 * 1024 + 1)
+                if len(raw) > MAX_XML_BYTES + 64 * 1024:
+                    response_status = 413
+                    raise ValueError('アップロードが大きすぎます。MusicXMLは2 MiB以下にしてください。')
+                imported = parse_score(raw)
                 new_progression = ChordProgression.from_import(imported.measures, imported.harmonies)
+                if selection is not None and request.form.get('replace_current') != 'yes':
+                    raise ValueError('現在の作業を置き換える確認欄にチェックしてください。')
                 selection = MelodySelection(imported.notes)
                 progression = new_progression
                 notation = imported.notation
@@ -151,7 +212,26 @@ def index():
                 tab_state = None
                 arrangement_state = None
                 estimate_state = None
+                project_state = None
                 filename, filters = uploaded.filename, {}
+            elif mode == 'project_open':
+                uploaded = request.files.get('project_file')
+                if uploaded is None or not uploaded.filename:
+                    raise ValueError('プロジェクトファイルを選択してください。')
+                document = project.loads(uploaded.read(project.MAX_PROJECT_BYTES + 1))
+                restored = restore_project(document)
+                if selection is not None and request.form.get('replace_current') != 'yes':
+                    raise ValueError('現在の作業を置き換える確認欄にチェックしてください。')
+                selection, progression, fingering_state, arrangement_state, project_state = restored
+                notation, filename = document['data']['notation'], document['data']['filename']
+                filters, tab_state, estimate_state = {}, None, None
+                message = 'プロジェクトを開きました。演奏上の注意と未変換音を確認してください。'
+            elif mode == 'project_name':
+                if selection is None:
+                    raise ValueError('先に楽譜またはプロジェクトを開いてください。')
+                new_name = project.name(request.form.get('project_name', ''))
+                project_state = {**project_state, 'name': new_name}
+                message = 'プロジェクト名を変更しました。ファイルに残すにはプロジェクトを保存してください。'
             elif mode == "arrangement":
                 if selection is None or progression is None:
                     raise ValueError("先にMusicXMLファイルを読み込んでください。")
@@ -286,13 +366,14 @@ def index():
         fingering_state=fingering_state,
         tab_state=tab_state,
         arrangement_state=arrangement_state,
+        project_state=project_state,
         estimate_state=estimate_state,
         estimate_form=estimate_form,
         chord_form=chord_form,
         filename=filename,
         filters=filters,
         message=message,
-    )
+    ), response_status
 
 
 if __name__ == "__main__":

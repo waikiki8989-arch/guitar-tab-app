@@ -65,7 +65,8 @@ def main():
             accompaniment = page.locator('.tab-hit[data-role="accompaniment"][data-staff="0"]').first
             accompaniment_id = accompaniment.get_attribute('data-tab-note')
             accompaniment.focus()
-            page.keyboard.press('Enter')
+            with page.expect_navigation():
+                page.keyboard.press('Enter')
             page.wait_for_function('window.tabEditor')
             assert page.locator('#arr-edit-form input[name=arr_note_id]').input_value() == accompaniment_id
             page.locator('.tab-hit[data-role="melody"][data-staff="1"]').first.click()

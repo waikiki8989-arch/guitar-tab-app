@@ -30,7 +30,7 @@
     </div>
 
     {% if progression.events %}
-        <form method="post">
+        <form method="post" action="{{ url_for('index') }}">
             <input type="hidden" name="mode" value="progression">
             <input type="hidden" name="score_state" value="{{ state_token }}">
             <div class="score-table" tabindex="0" role="region" aria-label="コード進行一覧">
@@ -67,7 +67,7 @@
     {% endif %}
 
     <h3>{{ '選択したコードを変更' if chord_form.event_id else 'コードを追加' }}</h3>
-    <form method="post" class="chord-entry">
+    <form method="post" action="{{ url_for('index') }}" class="chord-entry">
         <input type="hidden" name="mode" value="progression">
         <input type="hidden" name="score_state" value="{{ state_token }}">
         <input type="hidden" name="event_id" value="{{ chord_form.event_id }}">
