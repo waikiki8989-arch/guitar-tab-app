@@ -3,7 +3,7 @@
         変換設定のオクターブ移動とは別の記譜上の差です。</p>
     <p>TAB下の「4分」「2分」などは音価、末尾の「·」は付点です。三連符は譜面の「3」で示します。</p>
     <p>TABまたは五線譜の音符を選び、同じ実音の別運指へ変更できます。変更は固定運指として反映します。</p>
-    <form method="post" id="tab-select-form">
+    <form method="post" action="{{ url_for('index') }}" id="tab-select-form">
         <input type="hidden" name="mode" value="tab_editor">
         <input type="hidden" name="score_state" value="{{ state_token }}">
         <label for="tab-note-id">編集する音符</label>
@@ -13,7 +13,7 @@
         <button name="tab_action" value="select" id="tab-select-submit">音符を選択</button>
     </form>
     {% if tab_selected %}
-    <form method="post" id="tab-edit-form">
+    <form method="post" action="{{ url_for('index') }}" id="tab-edit-form">
         <input type="hidden" name="mode" value="tab_editor">
         <input type="hidden" name="score_state" value="{{ state_token }}">
         <input type="hidden" name="note_id" value="{{ tab_selected.note.note_id }}">
@@ -29,7 +29,7 @@
         {% if tab_selected.locked %}<button name="tab_action" value="unlock">TABの固定を解除</button>{% endif %}
     </form>
     {% endif %}
-    <form method="post" class="button-row" id="tab-history-form">
+    <form method="post" action="{{ url_for('index') }}" class="button-row" id="tab-history-form">
         <input type="hidden" name="mode" value="tab_editor">
         <input type="hidden" name="score_state" value="{{ state_token }}">
         <button name="tab_action" value="undo" {% if not tab_state.undo %}disabled{% endif %}>元に戻す</button>

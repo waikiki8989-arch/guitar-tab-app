@@ -13,7 +13,7 @@ FIXTURES = Path(__file__).parent / 'fixtures'
 
 
 def upload(client, filename='chord_progression.musicxml', **extra):
-    return client.post('/', data={'mode': 'musicxml',
+    return client.post('/', data={'mode': 'musicxml', 'replace_current': 'yes',
                                  'musicxml': (BytesIO((FIXTURES / filename).read_bytes()), filename), **extra})
 
 

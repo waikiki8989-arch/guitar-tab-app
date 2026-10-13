@@ -19,6 +19,8 @@ def main():
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
             errors = []
+            # This regression flow intentionally discards draft form inputs and navigates between scores.
+            page.on('dialog', lambda dialog: dialog.accept())
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
             def upload(name=None, payload=None):

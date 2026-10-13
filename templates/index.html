@@ -12,15 +12,17 @@
 <body>
     <main>
         <h1>Guitar Tab App</h1>
+        {% include 'project_editor.html' %}
 
         <section>
             <h2>ピアノ譜を読み込む</h2>
             <p>非圧縮の .musicxml・.xml（2 MiB以下）に対応しています。</p>
-            <form method="post" enctype="multipart/form-data">
+            <form method="post" action="{{ url_for('index') }}" enctype="multipart/form-data" data-replaces-project>
                 <input type="hidden" name="mode" value="musicxml">
                 {% if state_token %}<input type="hidden" name="score_state" value="{{ state_token }}">{% endif %}
                 <label for="musicxml">MusicXMLファイル</label>
-                <input id="musicxml" name="musicxml" type="file" accept=".musicxml,.xml" required>
+                <input id="musicxml" name="musicxml" type="file" accept=".musicxml,.xml" data-max-bytes="2097152" required>
+                {% if project_state %}<label><input type="checkbox" name="replace_current" value="yes">現在の作業を置き換える（必要なら先に保存）</label>{% endif %}
                 <button type="submit">音符を読み込む</button>
             </form>
             <p>PDF・画像・.mxl、score-timewise形式、装飾音、移調楽器は未対応です。</p>
@@ -79,7 +81,7 @@
         <section>
             <h2>コードから作成</h2>
 
-            <form method="post">
+            <form method="post" action="{{ url_for('index') }}">
                 <input type="hidden" name="mode" value="chord">
                 {% if state_token %}<input type="hidden" name="score_state" value="{{ state_token }}">{% endif %}
 
@@ -104,7 +106,7 @@
             <h2>フレット番号から作成</h2>
             <p>6弦から1弦の順番で入力してください。</p>
 
-            <form method="post">
+            <form method="post" action="{{ url_for('index') }}">
                 <input type="hidden" name="mode" value="frets">
                 {% if state_token %}<input type="hidden" name="score_state" value="{{ state_token }}">{% endif %}
 

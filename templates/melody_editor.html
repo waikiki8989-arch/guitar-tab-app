@@ -17,7 +17,7 @@
         表示条件を変えても、ほかの候補から選んだ音は残ります。</p>
     <p>開始位置は曲の先頭＝0、時間の単位は四分音符＝1です。
         選ばなかった音の時間を詰めず、休符に相当する空白を維持します。</p>
-    <form method="post" id="melody-form">
+    <form method="post" action="{{ url_for('index') }}" id="melody-form">
         <input type="hidden" name="mode" value="melody">
         <input type="hidden" name="score_state" value="{{ state_token }}">
         <fieldset class="melody-filters">

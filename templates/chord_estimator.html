@@ -2,7 +2,7 @@
     <h2 id="estimate-heading">音符からコード候補を探す</h2>
     <p>元の楽譜のメロディーと伴奏から候補を出します。推定だけではコード進行は変わりません。</p>
     <p>初期設定は各小節を1区間として解析します。小節途中でコードが変わる場合は、対象小節と分割位置を指定してください。</p>
-    <form method="post" class="chord-entry">
+    <form method="post" action="{{ url_for('index') }}" class="chord-entry">
         <input type="hidden" name="mode" value="estimate">
         <input type="hidden" name="score_state" value="{{ state_token }}">
         {% for field, label in [('part_id', '解析するパート'), ('staff', '解析する譜表')] %}
@@ -32,7 +32,7 @@
     </form>
     {% if estimate_results %}
         <p>最大3候補を順位順に表示します。順位は候補同士の比較であり、正解の確率ではありません。</p>
-        <form method="post">
+        <form method="post" action="{{ url_for('index') }}">
             <input type="hidden" name="mode" value="estimate">
             <input type="hidden" name="score_state" value="{{ state_token }}">
             {% for result in estimate_results %}

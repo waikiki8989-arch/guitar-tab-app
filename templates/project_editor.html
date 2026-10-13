@@ -1,0 +1,34 @@
+<section aria-labelledby="project-heading" id="project-panel"
+         data-has-project="{{ 'true' if project_state else 'false' }}"
+         data-dirty="{{ 'true' if project_dirty else 'false' }}">
+    <h2 id="project-heading">作業の保存・再読み込み</h2>
+    {% if project_state %}
+    <p id="project-change-status" role="status">{{ 'ファイルに保存していない変更があります。' if project_dirty else '開いた／ダウンロードした内容から変更はありません。' }}</p>
+    <form method="post" action="{{ url_for('index') }}" id="project-name-form">
+        <input type="hidden" name="mode" value="project_name">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <label for="project-name">プロジェクト名</label>
+        <input id="project-name" name="project_name" value="{{ project_state.name }}" maxlength="120" required>
+        <button>プロジェクト名を反映</button>
+    </form>
+    <form method="post" action="{{ url_for('download_project') }}" target="_blank" id="project-save-form">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <button id="project-save-button">プロジェクトを保存</button>
+    </form>
+    <p>画面に反映済みの楽譜・メロディー・コード・運指・編曲を「曲名.guitar-tab.json」に保存します。
+        入力中の変更は、各欄の反映ボタンで確定してから保存してください。</p>
+    <p>未採用の候補・再生位置・編集履歴は保存しません。</p>
+    {% endif %}
+    <p>保存はファイルのダウンロード方式です。端末上の既存ファイルは自動更新しません。
+        ダウンロードを開始しても保存完了は確認できないため、端末の保存先を確認してください。</p>
+    <p id="project-transfer-status" role="status"></p>
+    <form method="post" action="{{ url_for('open_project') }}" enctype="multipart/form-data" id="project-open-form" data-replaces-project>
+        {% if state_token %}<input type="hidden" name="score_state" value="{{ state_token }}">{% endif %}
+        <label for="project-file">プロジェクトを開く（JSON・8 MiB以下）</label>
+        <input type="file" id="project-file" name="project_file" accept=".json,application/json" data-max-bytes="8388608" required>
+        {% if project_state %}<label><input type="checkbox" name="replace_current" value="yes">現在の作業を置き換える（必要なら先に保存）</label>{% endif %}
+        <button>プロジェクトを開く</button>
+    </form>
+    <noscript><p>JavaScriptなしでも保存・読み込みできます。ページを離れる前の確認は表示できないため、必要な作業を先に保存してください。</p></noscript>
+</section>
+<script defer src="{{ url_for('static', filename='project_editor.js') }}"></script>
