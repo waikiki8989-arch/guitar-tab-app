@@ -7,6 +7,8 @@ import hashlib
 import json
 import re
 
+import export_settings
+
 from defusedxml import ElementTree as SafeET
 from music21.pitch import Pitch
 
@@ -16,7 +18,7 @@ from fingering import TUNING
 from musicxml_parser import ScoreNote
 
 FORMAT = 'guitar-tab-project'
-VERSION = 1
+VERSION = 2
 MAX_PROJECT_BYTES = 8 * 1024 * 1024
 MAX_ITEMS = 10000
 ARRANGEMENT_FIELDS = ('notes', 'next_id', 'span_limit', 'baseline')
@@ -39,9 +41,10 @@ def filename(value):
     return stem + '.guitar-tab.json'
 
 
-def snapshot(selection, progression, notation, fingering, arrangement, source_filename):
+def snapshot(selection, progression, notation, fingering, arrangement, source_filename, output_settings=None):
     return deepcopy({'selection': selection.to_data(), 'progression': progression.to_data(),
         'notation': notation, 'fingering': fingering, 'filename': source_filename,
+        'export_settings': export_settings.normalize(output_settings),
         'tuning': {str(k): v for k, v in TUNING.items()},
         'arrangement': {k: arrangement[k] for k in ARRANGEMENT_FIELDS} if arrangement is not None else None})
 
@@ -321,8 +324,8 @@ def validate(document):
     obj(document, ('format', 'version', 'project', 'data'), 'ファイル構造')
     if document['format'] != FORMAT:
         fail('形式', 'Guitar Tab Appのプロジェクトではありません')
-    if type(document['version']) is not int or document['version'] != VERSION:
-        fail('形式バージョン', '未対応のバージョンです（対応：1）')
+    if type(document['version']) is not int or document['version'] not in (1, VERSION):
+        fail('形式バージョン', '未対応のバージョンです（対応：1・2）')
     metadata = obj(document['project'], ('name', 'created_at', 'updated_at'), 'プロジェクト情報')
     name(metadata['name'])
     dates = []
@@ -337,7 +340,12 @@ def validate(document):
             raise ValueError(f'プロジェクトの{key}：日時が不正です。') from exc
     if dates[1] < dates[0]:
         fail('更新日時', '作成日時より前です')
-    data = obj(document['data'], ('selection', 'progression', 'notation', 'fingering', 'filename', 'tuning', 'arrangement'), '保存内容')
+    keys = ('selection', 'progression', 'notation', 'fingering', 'filename', 'tuning', 'arrangement')
+    if document['version'] == 2:
+        keys += ('export_settings',)
+    data = obj(document['data'], keys, '保存内容')
+    if document['version'] == 2:
+        export_settings.normalize(data['export_settings'])
     text(data['filename'], '元ファイル名')
     obj(data['tuning'], (str(k) for k in TUNING), 'チューニング')
     if any(type(data['tuning'][str(k)]) is not int or data['tuning'][str(k)] != v for k, v in TUNING.items()):
@@ -369,4 +377,7 @@ def loads(raw):
         raise ValueError('プロジェクトを読み取れません。UTF-8のJSONファイルを選択してください。') from exc
     except (TypeError, KeyError, OverflowError) as exc:
         raise ValueError('プロジェクトの項目・データ型が不正です。') from exc
+    if document['version'] == 1:
+        document['version'] = VERSION
+        document['data']['export_settings'] = export_settings.normalize()
     return document

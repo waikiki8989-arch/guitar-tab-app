@@ -1,0 +1,29 @@
+{% if selection %}
+<section id="export-panel">
+    <h2>楽譜を印刷・出力する</h2>
+    <p>確定したメロディーと採用済みのベース・伴奏を出力します。編集を続けるための保存は「プロジェクトを保存」を使ってください。</p>
+    <form method="post" action="{{ url_for('index') }}" id="export-settings-form">
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <input type="hidden" name="mode" value="export_settings">
+        <label for="export-title">曲名（空欄ならプロジェクト名）</label>
+        <input id="export-title" name="title" maxlength="120" value="{{ output_settings.title }}">
+        <label for="export-composer">作曲者（任意）</label>
+        <input id="export-composer" name="composer" maxlength="120" value="{{ output_settings.composer }}">
+        <label for="export-arranger">編曲者（任意）</label>
+        <input id="export-arranger" name="arranger" maxlength="120" value="{{ output_settings.arranger }}">
+        <label for="export-layout">出力する譜面</label>
+        <select id="export-layout" name="layout"><option value="both" {% if output_settings.layout == 'both' %}selected{% endif %}>五線譜＋TAB</option><option value="tab" {% if output_settings.layout == 'tab' %}selected{% endif %}>TABのみ</option></select>
+        <button>出力設定を反映</button>
+    </form>
+    <p>設定は反映してから出力してください。反映済みの設定はプロジェクトにも保存されます。出力前に運指と記譜を検査します。</p>
+    <p>MusicXMLを楽譜ソフトで確認するときは、コード記号の自動演奏をオフにすると、編曲した音符だけを聴けます。</p>
+    <form method="post" action="{{ url_for('export_score', action='print') }}" target="_blank" data-score-export>
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <button>印刷プレビューを開く</button>
+    </form>
+    <form method="post" action="{{ url_for('export_score', action='musicxml') }}" target="_blank" data-score-export>
+        <input type="hidden" name="score_state" value="{{ state_token }}">
+        <button>MusicXMLをダウンロード</button>
+    </form>
+</section>
+{% endif %}

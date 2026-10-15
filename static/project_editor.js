@@ -35,6 +35,14 @@
     document.addEventListener('submit', event => {
         const form = event.target;
         if (form === saveForm) return;
+        if (form.hasAttribute('data-score-export')) {
+            if (pendingForms.size) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                transfer.textContent = '入力中の変更があります。各欄の反映ボタンを押してから出力してください。';
+            }
+            return;
+        }
         if (form.hasAttribute('data-replaces-project')) {
             const fileInput = form.querySelector('input[type=file]');
             const file = fileInput?.files[0];

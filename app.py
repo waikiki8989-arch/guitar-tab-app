@@ -16,6 +16,8 @@ from tab_score import editor_state, edit, build_tab_preview
 import arrangement
 from arrangement_score import build_arrangement_preview
 import project
+import export_settings
+import score_export
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -30,7 +32,8 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
-def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, output_settings=None, filename="", filters=None, **context):
+    output_settings = export_settings.normalize(output_settings)
     filters = filters or {}
     fingering_rows, fingering_error = (), None
     arrangement_warnings, arrangement_spans, arrangement_rows = [], [], []
@@ -49,7 +52,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                                     'offset': str(selected.start - measure.start), 'duration': str(selected.duration),
                                     'string': selected.string, 'fret': selected.fret}
         project_data = project.snapshot(selection, progression, notation or {'changes': [], 'warnings': []},
-                                        fingering_state, arrangement_state, filename)
+                                        fingering_state, arrangement_state, filename, output_settings)
         project_state = project.track(project_data, project_state)
         context.update(
             notes=selection.notes,
@@ -64,6 +67,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                 "tab_editor": tab_state,
                 "arrangement": arrangement_state,
                 "project": project_state,
+                "export_settings": output_settings,
             }),
         )
     else:
@@ -92,7 +96,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                            arrangement_state=arrangement_state, arrangement_rows=arrangement_rows,
                            arrangement_warnings=arrangement_warnings, arrangement_spans=arrangement_spans,
                            arrangement_form=arrangement_form, arrangement_roles=arrangement.ROLES,
-                           project_state=project_state,
+                           project_state=project_state, output_settings=output_settings,
                            project_dirty=bool(project_state and project_state['current_digest'] != project_state['saved_digest']),
                            tab_state=tab_state,
                            tab_selected=next((r for r in fingering_rows if tab_state and r["note"].note_id == tab_state["selected"]), None),
@@ -112,7 +116,7 @@ def download_project():
         selection = MelodySelection.from_data(state['selection'])
         progression = ChordProgression.from_data(state['progression'])
         data = project.snapshot(selection, progression, state['notation'], state['fingering'],
-                                state['arrangement'], state['filename'])
+                                state['arrangement'], state['filename'], state.get('export_settings'))
         metadata = project.track(data, state.get('project'))
         content = project.dumps(data, metadata)
         # This records the downloaded snapshot, not confirmation that the OS saved it.
@@ -132,6 +136,34 @@ def download_project():
         if request.accept_mimetypes.best == 'application/json':
             return jsonify(error=message), 400
         return render_template('project_download_error.html', error=message), 400
+
+
+@app.post('/score/<action>')
+def export_score(action):
+    if action not in ('print', 'musicxml'):
+        return 'Not found', 404
+    token = request.form.get('score_state', '')
+    try:
+        state = state_serializer().loads(token, max_age=8 * 60 * 60)
+        result = score_export.prepare(
+            MelodySelection.from_data(state['selection']), ChordProgression.from_data(state['progression']),
+            state['notation'], state['fingering'], state['arrangement'], state.get('export_settings'),
+            state.get('project', {}).get('name') or 'ギター譜')
+        acknowledged = request.form.get('acknowledge') == 'yes'
+        if result['blockers'] or (result['warnings'] and not acknowledged):
+            response = app.make_response((render_template('export_check.html', result=result, action=action,
+                                                        state_token=token), 422 if result['blockers'] else 200))
+        elif action == 'musicxml':
+            name = project.filename(result['settings']['title']).removesuffix('.guitar-tab.json') + '.musicxml'
+            response = send_file(BytesIO(result['xml'].encode('utf-8')), mimetype='application/vnd.recordare.musicxml+xml',
+                                 as_attachment=True, download_name=name)
+        else:
+            response = app.make_response(render_template('score_print.html', result=result))
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except (BadData, KeyError, ValueError) as exc:
+        error = str(exc) if isinstance(exc, ValueError) else '作業情報が無効または期限切れです。元の画面からやり直してください。'
+        return render_template('project_download_error.html', error=error), 400
 
 
 def restore_project(document):
@@ -161,6 +193,7 @@ def index():
     tab_state = None
     arrangement_state = None
     project_state = None
+    output_settings = None
     estimate_state = None
     estimate_form = None
     chord_form = {"event_id": "", "symbol_name": "", "measure_id": "", "offset": "0"}
@@ -191,6 +224,7 @@ def index():
                     tab_state = state.get("tab_editor")
                     arrangement_state = state.get("arrangement")
                     project_state = state.get("project")
+                    output_settings = state.get("export_settings")
             if mode == "musicxml":
                 uploaded = request.files.get("musicxml")
                 if uploaded is None or not uploaded.filename:
@@ -213,6 +247,7 @@ def index():
                 arrangement_state = None
                 estimate_state = None
                 project_state = None
+                output_settings = None
                 filename, filters = uploaded.filename, {}
             elif mode == 'project_open':
                 uploaded = request.files.get('project_file')
@@ -223,9 +258,15 @@ def index():
                 if selection is not None and request.form.get('replace_current') != 'yes':
                     raise ValueError('現在の作業を置き換える確認欄にチェックしてください。')
                 selection, progression, fingering_state, arrangement_state, project_state = restored
+                output_settings = document['data']['export_settings']
                 notation, filename = document['data']['notation'], document['data']['filename']
                 filters, tab_state, estimate_state = {}, None, None
                 message = 'プロジェクトを開きました。演奏上の注意と未変換音を確認してください。'
+            elif mode == 'export_settings':
+                if selection is None:
+                    raise ValueError('先に楽譜を開いてください。')
+                output_settings = export_settings.normalize({key: request.form.get(key, '') for key in export_settings.DEFAULTS})
+                message = '出力設定を反映しました。プロジェクトを保存すると、この設定も保存されます。'
             elif mode == 'project_name':
                 if selection is None:
                     raise ValueError('先に楽譜またはプロジェクトを開いてください。')
@@ -367,6 +408,7 @@ def index():
         tab_state=tab_state,
         arrangement_state=arrangement_state,
         project_state=project_state,
+        output_settings=output_settings,
         estimate_state=estimate_state,
         estimate_form=estimate_form,
         chord_form=chord_form,
