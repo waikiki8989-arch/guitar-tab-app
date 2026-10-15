@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>楽譜の出力前確認</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><main><h1>楽譜の出力前確認</h1>
+{% if result.blockers %}<h2>修正が必要です</h2><p>完全なTABを出力できないため、印刷・MusicXML出力を停止しました。元の編集画面で修正してください。</p>
+<ul>{% for item in result.blockers %}<li>小節{{ item.measure }}・開始{{ item.start }}{% if item.ids %}（{{ item.ids|join(', ') }}）{% endif %}：{{ item.reason }}</li>{% endfor %}</ul>{% endif %}
+{% if result.warnings %}<h2>出力前に確認してください</h2><ul>{% for item in result.warnings %}<li>小節{{ item.measure }}・開始{{ item.start }}{% if item.ids %}（{{ item.ids|join(', ') }}）{% endif %}：{{ item.reason }}</li>{% endfor %}</ul>{% endif %}
+{% if not result.blockers %}
+<form method="post" action="{{ url_for('export_score', action=action) }}">
+    <input type="hidden" name="score_state" value="{{ state_token }}">
+    <label><input type="checkbox" name="acknowledge" value="yes" required>上記の注意を確認しました</label>
+    <button>{{ '印刷プレビューへ進む' if action == 'print' else 'MusicXMLをダウンロード' }}</button>
+</form>{% endif %}
+<p>元の編集画面は別のタブに残っています。このタブを閉じると戻れます。</p>
+</main></body></html>

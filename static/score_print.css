@@ -1,0 +1,19 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #e9ecef; color: #111; font-family: sans-serif; }
+.print-controls { max-width: 900px; margin: 20px auto; padding: 20px; background: white; }
+button { padding: 10px 20px; }
+.print-page { width: 210mm; height: 297mm; padding: 15mm; margin: 16px auto; background: white; position: relative; overflow: hidden; }
+.print-page header { min-height: 30mm; padding-bottom: 8mm; }
+.print-page h1 { font-size: 20px; margin: 0 0 6px; overflow-wrap: anywhere; }
+.print-page p { font-size: 11px; margin: 4px 0; overflow-wrap: anywhere; }
+.print-page footer { position: absolute; bottom: 8mm; left: 15mm; right: 15mm; text-align: center; font-size: 11px; }
+.print-system { display: block; width: 100%; break-inside: avoid; }
+#engraving { position: absolute; left: -10000px; width: 900px; }
+@page { size: A4 portrait; margin: 0; }
+@media print {
+    body { background: white; }
+    .print-controls, #engraving { display: none; }
+    .print-page { margin: 0; break-after: page; break-inside: avoid; }
+    .print-page:last-child { break-after: auto; }
+    body:not([data-print-ready]) #print-pages::before { content: '楽譜の準備が完了してから印刷してください。'; }
+}

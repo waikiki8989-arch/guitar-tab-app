@@ -60,7 +60,7 @@ def test_edited_project_preserves_fractional_time_sources_locks_and_arrangement(
 
 
 @pytest.mark.parametrize('path,value', [
-    (('format',), 'other'), (('version',), 2), (('version',), True),
+    (('format',), 'other'), (('version',), 999), (('version',), True),
     (('project', 'name'), ''), (('project', 'created_at'), 'yesterday'),
     (('project', 'updated_at'), '2000-01-01T00:00:00Z'),
     (('data', 'selection', 'selected_ids'), ['unknown']),
