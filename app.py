@@ -19,6 +19,8 @@ import project
 import export_settings
 import score_export
 import pdf_preview
+import omr
+from musicxml_parser import parse_score
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -61,6 +63,22 @@ def pdf_preview_page():
                 rotation = int(request.form.get('rotation', '0')) % 360
                 selected = (pdf_preview.selected_pages(request.form.getlist('selected_pages'), len(document.pages))
                             if action == 'targets' else tuple(range(1, len(document.pages) + 1)))
+                if action == 'recognize':
+                    page_number = int(request.form.get('page', '1'))
+                    image = document.pages[page_number - 1].image
+                    imported = parse_score(omr.recognize_png(omr.png_from_data_url(image)))
+                    note_rows = [{
+                        'measure': note.measure, 'pitch': note.pitch,
+                        'start': str(note.start), 'duration': str(note.duration),
+                        'staff': {'1': '右手', '2': '左手'}.get(note.staff, '未指定'),
+                        'voice': note.voice or '未指定', 'confidence': None,
+                    } for note in imported.notes]
+                    recognition = {
+                        'page': page_number,
+                        'notes': note_rows,
+                        'measures': imported.measures,
+                        'warnings': imported.notation.get('warnings', []),
+                    }
             data = {'fileName': document.file_name, 'fileSize': document.file_size,
                     'pageCount': len(document.pages), 'selectedPages': selected,
                     'currentPage': min(max(current, 1), len(document.pages)),
@@ -69,7 +87,8 @@ def pdf_preview_page():
                                for page in document.pages]}
         except (pdf_preview.PdfPreviewError, ValueError) as exc:
             error = str(exc)
-    return render_template('pdf_preview.html', data=data, pdf_key=key, error=error)
+    return render_template('pdf_preview.html', data=data, pdf_key=key, error=error,
+                           recognition=locals().get('recognition'))
 
 
 def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, output_settings=None, filename="", filters=None, **context):
