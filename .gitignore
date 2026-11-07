@@ -4,3 +4,5 @@ __pycache__/
 .pytest_cache/
 .env
 tests/manual_data/pdf/
+.venv-omr/
+tests/manual_data/omr/
