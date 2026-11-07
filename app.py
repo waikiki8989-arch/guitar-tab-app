@@ -18,6 +18,7 @@ from arrangement_score import build_arrangement_preview
 import project
 import export_settings
 import score_export
+import pdf_preview
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -30,6 +31,45 @@ app.config["SECRET_KEY"] = os.environ.get("GUITAR_TAB_SECRET_KEY") or secrets.to
 
 def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
+
+
+@app.route('/pdf', methods=['GET', 'POST'])
+def pdf_preview_page():
+    data = None
+    key = ''
+    error = None
+    selected = ()
+    current = 1
+    scale = 1
+    rotation = 0
+    if request.method == 'POST':
+        try:
+            action = request.form.get('action')
+            if action == 'upload':
+                uploaded = request.files.get('pdf_file')
+                if uploaded is None:
+                    raise pdf_preview.PdfPreviewError('PDFファイルを選択してください。')
+                key, document = pdf_preview.load(uploaded.read(pdf_preview.MAX_PDF_BYTES + 1), uploaded.filename)
+                selected = tuple(range(1, len(document.pages) + 1))
+            else:
+                key = request.form.get('pdf_key', '')
+                document = pdf_preview.get(key)
+                if document is None:
+                    raise pdf_preview.PdfPreviewError('PDFの作業情報が期限切れです。読み込み直してください。')
+                current = int(request.form.get('page', '1'))
+                scale = min(max(float(request.form.get('scale', '1')), .5), 3)
+                rotation = int(request.form.get('rotation', '0')) % 360
+                selected = (pdf_preview.selected_pages(request.form.getlist('selected_pages'), len(document.pages))
+                            if action == 'targets' else tuple(range(1, len(document.pages) + 1)))
+            data = {'fileName': document.file_name, 'fileSize': document.file_size,
+                    'pageCount': len(document.pages), 'selectedPages': selected,
+                    'currentPage': min(max(current, 1), len(document.pages)),
+                    'scale': scale, 'rotation': rotation,
+                    'images': [{'page': page.number, 'displayImage': page.image}
+                               for page in document.pages]}
+        except (pdf_preview.PdfPreviewError, ValueError) as exc:
+            error = str(exc)
+    return render_template('pdf_preview.html', data=data, pdf_key=key, error=error)
 
 
 def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, output_settings=None, filename="", filters=None, **context):

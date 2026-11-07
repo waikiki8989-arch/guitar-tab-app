@@ -15,6 +15,11 @@
         {% include 'project_editor.html' %}
 
         <section>
+            <h2>ピアノ楽譜PDF</h2>
+            <p><a href="{{ url_for('pdf_preview_page') }}">PDFを読み込み、ページ画像を確認する</a></p>
+        </section>
+
+        <section>
             <h2>ピアノ譜を読み込む</h2>
             <p>非圧縮の .musicxml・.xml（2 MiB以下）に対応しています。</p>
             <form method="post" action="{{ url_for('index') }}" enctype="multipart/form-data" data-replaces-project>
