@@ -47,6 +47,19 @@ def test_paired_parts_share_measures_rhythm_chords_and_fingerings():
     assert before == (selection.to_data(), fingering)
 
 
+def test_note_map_contains_shared_score_and_tab_identity_data():
+    score, selection, fingering, rows, progression = setup()
+    preview = build_tab_preview(selection, progression, score.notation, fingering, rows)
+    mapped = next(item for item in preview['note_map'] if not item['missing'])
+    assert mapped['note_id']
+    assert mapped['measure']
+    assert mapped['beat'] >= 0
+    assert mapped['pitch']
+    assert isinstance(mapped['string'], int)
+    assert isinstance(mapped['fret'], int)
+    assert mapped['duration']
+
+
 def test_written_pitch_is_one_octave_above_guitar_audio_and_same_fret_edit_keeps_audio():
     score, selection, fingering, _, progression = setup()
     fingering = apply_action(selection, fingering, 'calculate', {'max_fret': '24', 'octave': '-1'})
