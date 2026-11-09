@@ -90,6 +90,10 @@ def build_tab_preview(selection, progression, notation, fingering, rows, title='
             if row and original.find('pitch') is not None:
                 # OSMD uses the source timestamp to map split graphical notes back to original IDs.
                 note_map.append({'start': float(cursor), 'note_id': row['note'].note_id,
+                                 'measure': measure.number, 'beat': float(cursor - measure.start),
+                                 'pitch': row['note'].pitch, 'string': row['position'][0] if row['position'] else None,
+                                 'fret': row['position'][1] if row['position'] else None,
+                                 'duration': str(row['note'].duration),
                                  'missing': row['position'] is None, 'type': original.findtext('type'),
                                  'dots': len(original.findall('dot'))})
                 notations = tab_note.find('notations')
