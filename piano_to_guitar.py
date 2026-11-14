@@ -88,7 +88,7 @@ def convert(notes, *, hand="both", mode="melody", max_voices=3,
             deduplicate=True, out_of_range="up"):
     if hand not in ("right", "left", "both"):
         raise PianoConversionError("変換対象が不正です。")
-    if mode not in ("melody", "bass", "chord", "single"):
+    if mode not in ("melody", "bass", "chord", "single", "preserve"):
         raise PianoConversionError("変換モードが不正です。")
     try:
         max_voices = int(max_voices)
@@ -124,6 +124,18 @@ def convert(notes, *, hand="both", mode="melody", max_voices=3,
             group = sorted(group, key=lambda note: midi(note["pitch"]))[:max_voices]
         elif mode == "chord":
             group = sorted(group, key=lambda note: (midi(note["pitch"]) % 12, midi(note["pitch"])))[:max_voices]
+        elif mode == "preserve":
+            # The caller has already selected the musically important notes.
+            # Keep that order so bass and top melody are not discarded.
+            if len(group) > max_voices:
+                # ``group`` is pitch-sorted for normalization. Retain both
+                # extremes first, then fill the remaining voices from the
+                # middle of the chord.
+                extremes = [group[0]]
+                if max_voices > 1:
+                    extremes.append(group[-1])
+                middle = group[1:-1]
+                group = extremes + middle[:max_voices - len(extremes)]
         if len(group) > max_voices:
             discarded = group[max_voices:]
             group = group[:max_voices]
