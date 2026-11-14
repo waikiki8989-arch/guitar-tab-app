@@ -64,6 +64,26 @@ def _form_score(placements, weights, group=()):
             + (5 if len(strings) < len(placements) else 0) * weights["barre"])
 
 
+def _role(item):
+    return _get(item, "role", None)
+
+
+def _bass_position_options(options, group):
+    """Keep bass close to the selected melody position when possible."""
+    melody_indices = [index for index, note in enumerate(group) if _role(note) == "melody"]
+    bass_indices = [index for index, note in enumerate(group) if _role(note) == "bass"]
+    if len(melody_indices) != 1 or len(bass_indices) != 1:
+        return None
+    melody_index = melody_indices[0]
+    bass_index = bass_indices[0]
+    near = [option for option in options
+            if abs(option[0][bass_index].fret - option[0][melody_index].fret) <= 2]
+    if near:
+        return near
+    fallback = [option for option in options if option[0][bass_index].string in (3, 4)]
+    return fallback or options
+
+
 def _group_options(group, weights):
     choices = [_candidates(note) for note in group]
     if any(not candidates for candidates in choices):
@@ -73,6 +93,9 @@ def _group_options(group, weights):
         if len({item.string for item in placement_set}) != len(placement_set):
             continue
         options.append((tuple(placement_set), _form_score(placement_set, weights, group)))
+    constrained = _bass_position_options(options, group)
+    if constrained is not None:
+        options = constrained
     return sorted(options, key=lambda item: item[1])
 
 

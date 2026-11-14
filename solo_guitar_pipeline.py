@@ -260,10 +260,16 @@ def _candidates(note, *, capo, max_fret):
     preferred = range(1, 5) if role == "melody" else (range(5, 7) if role == "bass" else range(3, 7))
 
     def make(strings):
-        return [{"string": string, "fret": target - OPEN_STRING_MIDI[string] - capo,
-                 "physicalFret": target - OPEN_STRING_MIDI[string]}
-                for string in strings
-                if 0 <= target - OPEN_STRING_MIDI[string] - capo <= max_fret]
+        values = []
+        for string in strings:
+            fret = target - OPEN_STRING_MIDI[string] - capo
+            if not 0 <= fret <= max_fret:
+                continue
+            if role == "melody" and string >= 2 and fret >= 5:
+                continue
+            values.append({"string": string, "fret": fret,
+                           "physicalFret": target - OPEN_STRING_MIDI[string]})
+        return values
 
     values = make(preferred)
     fallback = None
@@ -271,8 +277,12 @@ def _candidates(note, *, capo, max_fret):
         fallback = "メロディーを1〜4弦へ割り当てられないため、他の弦を候補にしました。"
         values = make(range(1, 7))
     elif not values and role == "bass":
-        fallback = "ベースを5・6弦へ割り当てられないため、4弦を候補にしました。"
-        values = make((4,))
+        fallback = "ベースを5・6弦へ割り当てられないため、4・3弦を候補にしました。"
+        values = make((4, 3))
+    elif role == "bass":
+        # Keep lower-string fallbacks available when the preferred strings
+        # cannot stay near the melody's selected position.
+        values += make((4, 3))
     return values, fallback
 
 
@@ -431,6 +441,10 @@ def build(notes, *, hand="both", mode="auto", max_voices=6, max_fret=20,
             item[key] = str(item[key])
         for candidate in item["candidates"]:
             candidate["fret"] = int(candidate["fret"])
+    for item in output_notes:
+        if item["role"] == "bass" and item.get("string") in (3, 4):
+            warnings.append({"noteId": item["noteId"], "pitch": item["sourcePitch"],
+                             "reason": "メロディーに近いフレットを優先するため、ベースに4・3弦を使用しました。"})
     warnings.extend({"pitch": item["pitch"], "reason": item["reason"], "noteId": item["noteId"]}
                     for item in removed)
     warnings.extend({"reason": item} if isinstance(item, str) else {"reason": item}
