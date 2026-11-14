@@ -28,6 +28,17 @@ def test_melody_prefers_fret_one_or_two_over_a_higher_position():
     assert result["notes"][0]["fret"] == 1
 
 
+def test_bass_stays_within_two_frets_of_melody_before_using_lower_strings():
+    result = optimize([
+        {"pitch": "G4", "role": "melody", "start": "1", "duration": "1",
+         "candidates": [{"string": 1, "fret": 5}]},
+        {"pitch": "C3", "role": "bass", "start": "1", "duration": "1",
+         "candidates": [{"string": 5, "fret": 12}, {"string": 4, "fret": 7}]},
+    ])
+    bass = next(item for item in result["notes"] if item["pitch"] == "C3")
+    assert (bass["string"], bass["fret"]) == (4, 7)
+
+
 def test_chord_never_uses_same_string_twice():
     result = optimize([note("C3", "1", [(5, 3), (4, 8)]), note("E3", "1", [(5, 7), (4, 2)])])
     assert len({item["string"] for item in result["notes"]}) == 2

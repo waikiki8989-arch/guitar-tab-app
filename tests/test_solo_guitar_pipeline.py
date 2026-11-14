@@ -39,6 +39,23 @@ def test_solo_mode_classifies_outer_voices_and_prefers_role_strings():
     assert len({item["string"] for item in result["notes"]}) == 3
 
 
+def test_melody_does_not_use_above_fifth_fret_on_strings_two_to_six():
+    result = build([note("A5")], mode="melody", capo=0)
+    melody = result["notes"][0]
+    assert melody["string"] == 1
+    assert all(candidate["string"] == 1 or candidate["fret"] <= 4
+               for candidate in melody["candidates"])
+
+
+def test_bass_uses_lower_string_to_stay_near_melody_fret():
+    result = build([note("G4"), note("C5")], mode="solo", max_voices=2, capo=0)
+    by_role = {item["role"]: item for item in result["notes"]}
+    assert by_role["melody"]["fret"] == 1
+    assert by_role["bass"]["string"] == 3
+    assert abs(by_role["bass"]["fret"] - by_role["melody"]["fret"]) <= 2
+    assert any("4・3弦" in warning["reason"] for warning in result["warnings"])
+
+
 def test_bass_infers_chord_and_adds_missing_chord_tone_below_melody():
     result = build([note("C4"), note("G5")], mode="solo", max_voices=3, capo=0)
     assert result["chords"] == [{"start": "0", "name": "C"}]
