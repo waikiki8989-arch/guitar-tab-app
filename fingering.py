@@ -115,7 +115,8 @@ def reconcile(selection, state=None, *, recalculate=False):
             reason = ('微分音は標準フレットでは変換できません。' if midi.denominator != 1
                       else '音域外またはフレット上限内に候補がありません。上限やオクターブ移動を変更してください。')
         group_options.append(allowed)
-        rows.append([{'note': n, 'guitar_pitch': name, 'midi': str(midi), 'candidates': candidates,
+        rows.append([{'note': n, 'guitar_pitch': name, 'guitar_written_pitch': pitch_info(name, 1)[0],
+                      'midi': str(midi), 'candidates': candidates,
                       'position': None, 'locked': bool(locks), 'reason': reason,
                       'saved_lock': locks[0]['position'] if locks else None,
                       'tie_ids': [item.note_id for item in group]} for n in group])

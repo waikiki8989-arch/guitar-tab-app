@@ -58,6 +58,11 @@ def test_note_map_contains_shared_score_and_tab_identity_data():
     assert isinstance(mapped['string'], int)
     assert isinstance(mapped['fret'], int)
     assert mapped['duration']
+    assert mapped['source_pitch']
+    assert mapped['guitar_sounding_pitch']
+    assert mapped['guitar_written_pitch']
+    assert mapped['physical_fret'] == mapped['fret']
+    assert preview['capo'] == 0
 
 
 def test_written_pitch_is_one_octave_above_guitar_audio_and_same_fret_edit_keeps_audio():

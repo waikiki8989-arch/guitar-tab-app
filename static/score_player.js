@@ -24,6 +24,7 @@ class ScorePlayer {
         this.playButton = document.getElementById('play-score');
         this.pauseButton = document.getElementById('pause-score');
         this.stopButton = document.getElementById('stop-score');
+        this.zoom = 1;
         this.playButton.onclick = () => this.play();
         this.pauseButton.onclick = () => this.pause();
         this.stopButton.onclick = () => this.stop();
@@ -34,6 +35,9 @@ class ScorePlayer {
         }
         document.getElementById('playback-speed').onchange = event => this.configure('rate', Number(event.target.value));
         document.getElementById('playback-mode').onchange = event => this.configure('mode', event.target.value);
+        document.getElementById('score-zoom-out')?.addEventListener('click', () => this.setZoom(this.zoom - 0.1));
+        document.getElementById('score-zoom-reset')?.addEventListener('click', () => this.setZoom(1));
+        document.getElementById('score-zoom-in')?.addEventListener('click', () => this.setZoom(this.zoom + 0.1));
         // Cancel scheduled and sounding notes before any edit/upload navigation.
         document.addEventListener('submit', () => this.stop());
         document.addEventListener('input', event => {
@@ -41,7 +45,16 @@ class ScorePlayer {
         });
         window.addEventListener('pagehide', () => this.stop());
         this.status.textContent = '再生できます。';
+        this.setZoom(this.zoom);
         this.controls();
+    }
+
+    setZoom(value) {
+        this.zoom = Math.min(1.5, Math.max(0.7, Math.round(value * 10) / 10));
+        const sheet = document.getElementById('score-sheet');
+        if (sheet) sheet.style.zoom = String(this.zoom);
+        const label = document.getElementById('score-zoom-value');
+        if (label) label.textContent = `${Math.round(this.zoom * 100)}%`;
     }
 
     secondsAt(beat) {

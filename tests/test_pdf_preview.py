@@ -1,11 +1,13 @@
 from io import BytesIO
 from pathlib import Path
+import re
 
 import pytest
 
 fitz = pytest.importorskip("fitz")
 
 import pdf_preview
+import app as app_module
 from app import app
 
 
@@ -72,6 +74,28 @@ def test_pdf_upload_rejects_non_pdf():
 
     assert response.status_code == 200
     assert "PDFファイルを選択してください" in response.get_data(as_text=True)
+
+
+def test_recognized_pdf_can_open_in_musicxml_editor(monkeypatch):
+    musicxml = (Path(__file__).parent / "fixtures" / "simple_piano.musicxml").read_bytes()
+    monkeypatch.setattr(app_module.omr, "png_from_data_url", lambda _: b"recognized-image")
+    monkeypatch.setattr(app_module.omr, "recognize_png", lambda _: musicxml)
+    client = app.test_client()
+    uploaded = client.post(
+        "/pdf",
+        data={"action": "upload", "pdf_file": (BytesIO(make_pdf()), "recognized.pdf")},
+        content_type="multipart/form-data",
+    )
+    pdf_key = re.search(r'name="pdf_key" value="([^"]+)"', uploaded.get_data(as_text=True)).group(1)
+    recognized = client.post("/pdf", data={"action": "recognize", "pdf_key": pdf_key, "page": "1"})
+    html = recognized.get_data(as_text=True)
+    assert "編集画面で開く" in html
+    editor_token = re.search(r'id="pdf-editor-score-state" value="([^"]+)"', html).group(1)
+
+    editor = client.post("/", data={"mode": "score_state", "score_state": editor_token})
+    assert editor.status_code == 200
+    assert "PDFの認識結果を編集画面で開きました" in editor.get_data(as_text=True)
+    assert "メロディーを確定" in editor.get_data(as_text=True)
 
 
 def test_manual_pdf_fixture_is_usable_when_present():

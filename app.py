@@ -37,6 +37,18 @@ def state_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="melody-selection-v1")
 
 
+def pdf_editor_token(imported, filename):
+    """Turn one recognized PDF page into the same editable score state as MusicXML."""
+    selection = MelodySelection(imported.notes)
+    progression = ChordProgression.from_import(imported.measures, imported.harmonies)
+    return state_serializer().dumps({
+        "selection": selection.to_data(), "filename": filename, "filters": {},
+        "progression": progression.to_data(), "estimate_state": None,
+        "notation": imported.notation, "fingering": None, "tab_editor": None,
+        "arrangement": None, "project": None, "export_settings": export_settings.normalize(None),
+    })
+
+
 @app.route('/pdf', methods=['GET', 'POST'])
 def pdf_preview_page():
     data = None
@@ -46,6 +58,7 @@ def pdf_preview_page():
     current = 1
     scale = 1
     rotation = 0
+    editor_token = None
     if request.method == 'POST':
         try:
             action = request.form.get('action')
@@ -81,6 +94,7 @@ def pdf_preview_page():
                         'measures': imported.measures,
                         'warnings': imported.notation.get('warnings', []),
                     }
+                    editor_token = pdf_editor_token(imported, document.file_name)
                 if action == 'generate-tab':
                     page_number = int(request.form.get('page', '1'))
                     image = document.pages[page_number - 1].image
@@ -97,6 +111,7 @@ def pdf_preview_page():
                         'measures': imported.measures,
                         'warnings': imported.notation.get('warnings', []),
                     }
+                    editor_token = pdf_editor_token(imported, document.file_name)
                     capo_value = request.form.get('capo', 'auto')
                     capo = None if capo_value in ('', 'auto') else int(capo_value)
                     key_changes = [change for change in imported.notation.get('changes', [])
@@ -120,7 +135,8 @@ def pdf_preview_page():
         except (pdf_preview.PdfPreviewError, ValueError) as exc:
             error = str(exc)
     return render_template('pdf_preview.html', data=data, pdf_key=key, error=error,
-                           recognition=locals().get('recognition'), tab_result=locals().get('tab_result'))
+                           recognition=locals().get('recognition'), tab_result=locals().get('tab_result'),
+                           editor_token=editor_token)
 
 
 def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, output_settings=None, filename="", filters=None, solo_result=None, **context):
@@ -365,6 +381,10 @@ def index():
                 new_name = project.name(request.form.get('project_name', ''))
                 project_state = {**project_state, 'name': new_name}
                 message = 'プロジェクト名を変更しました。ファイルに残すにはプロジェクトを保存してください。'
+            elif mode == 'score_state':
+                if selection is None or progression is None:
+                    raise ValueError('編集する楽譜データがありません。PDFを再認識してください。')
+                message = 'PDFの認識結果を編集画面で開きました。メロディーを選択して確定してください。'
             elif mode == 'solo_tab':
                 if selection is None:
                     raise ValueError('先にMusicXMLファイルを読み込んでください。')

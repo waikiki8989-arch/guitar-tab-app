@@ -12,6 +12,9 @@ def test_web_edit_undo_redo_and_select_leave_score_unchanged():
     client = app.test_client()
     response = confirmed(client)
     original = state(response)
+    assert 'id="score-zoom-in"' in response.text
+    assert 'id="score-zoom-out"' in response.text
+    assert '表示倍率' in response.text
     note_id = original['selection']['notes'][1]['note_id']
     response = tab(client, response, 'select', note_id=note_id)
     assert 'id="tab-edit-form"' in response.text

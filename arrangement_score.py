@@ -5,6 +5,7 @@ from math import lcm
 from xml.etree import ElementTree as ET
 
 from arrangement import COLORS, ROLES, extra_notes, melody_notes, ArrangementNote
+from fingering import pitch_info
 from melody import MelodySelection
 from musicxml_parser import ScoreNote
 from score_preview import child
@@ -37,6 +38,7 @@ def build_arrangement_preview(selection, progression, notation, fingering, rows,
                 source = ScoreNote(n.pitch, n.start, n.duration, 'arrangement', ROLES[n.role], '1', '1',
                                    progression.measure_at(n.start).number, n.note_id)
             lane_rows.append({'note': source, 'guitar_pitch': n.pitch, 'midi': str(n.midi),
+                              'guitar_written_pitch': pitch_info(n.pitch, 1)[0], 'role': n.role,
                               'position': (n.string, n.fret) if n.string is not None else None,
                               'reason': 'メロディーの運指が未変換です。'})
         notes = tuple(r['note'] for r in lane_rows)
