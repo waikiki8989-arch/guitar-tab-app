@@ -39,6 +39,22 @@ def test_solo_mode_classifies_outer_voices_and_prefers_role_strings():
     assert len({item["string"] for item in result["notes"]}) == 3
 
 
+def test_bass_infers_chord_and_adds_missing_chord_tone_below_melody():
+    result = build([note("C4"), note("G5")], mode="solo", max_voices=3, capo=0)
+    assert result["chords"] == [{"start": "0", "name": "C"}]
+    assert any(item["sourcePitch"] == "E5" for item in result["notes"])
+    assert result["tabLayout"][0]["columns"][0]["chord"] == "C"
+
+
+def test_chord_tone_below_melody_has_top_inner_voice_priority():
+    result = build([note("C3"), note("E3"), note("G3"), note("D4"), note("B4")],
+                   mode="solo", max_voices=3, capo=0)
+    selected = {item["sourcePitch"]: item for item in result["notes"]}
+    assert selected["G4"]["generated"] is True
+    assert selected["G4"]["innerPriority"] is True
+    assert "E3" not in selected and "G3" not in selected and "D4" not in selected
+
+
 def test_capo_candidates_use_tab_fret_and_keep_physical_fret():
     result = build([note("F#5")], capo=2, max_fret=20)
     candidate = next(item for item in result["candidates"][0]["candidates"] if item["string"] == 1)

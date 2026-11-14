@@ -13,7 +13,8 @@ import re
 
 from capo_optimization import capo_for_key
 from fingering_optimization import optimize as optimize_fingering
-from piano_to_guitar import midi, pitch_name
+from chord_progression import CHORD_DEFINITIONS
+from piano_to_guitar import MIDI_NAMES, midi, pitch_name
 from string_fret_candidates import OPEN_STRING_MIDI
 
 
@@ -110,7 +111,10 @@ def _select(groups, max_voices):
     selected = []
     removed = []
     for start in sorted(groups):
-        group = sorted(groups[start], key=lambda item: (ROLE_PRIORITY[item["role"]], item["sourceMidi"], item["noteId"]))
+        group = sorted(groups[start], key=lambda item: (
+            ROLE_PRIORITY[item["role"]],
+            0 if item.get("innerPriority") else 1,
+            item["sourceMidi"], item["noteId"]))
         keep = group[:max_voices]
         selected.extend(keep)
         removed.extend({"noteId": note["noteId"], "pitch": note["sourcePitch"],
@@ -137,6 +141,92 @@ def _select_voice(groups, role):
                             "reason": ("同じ音名の重複を省略" if duplicate
                                        else f"{role}優先のため同時発音グループから省略")})
     return selected, removed
+
+
+def _active_chord(chords, start):
+    available = [chord for chord in chords if _get(chord, "start") <= start]
+    return max(available, key=lambda chord: _get(chord, "start")) if available else None
+
+
+def _chord_name(root, kind):
+    suffix = CHORD_DEFINITIONS.get(kind, ("", ()))[0]
+    return f"{MIDI_NAMES[root]}{suffix}"
+
+
+def _infer_chord(group, key_mode):
+    """Infer a simple triad/seventh from the lowest source note and voicing."""
+    bass = min(group, key=lambda item: item["sourceMidi"])
+    root = bass["sourceMidi"] % 12
+    present = {item["sourceMidi"] % 12 for item in group}
+    preferred = ["minor", "major"] if key_mode == "minor" else ["major", "minor"]
+    candidates = []
+    for kind, (_, intervals) in CHORD_DEFINITIONS.items():
+        chord_pcs = {(root + interval) % 12 for interval in intervals}
+        matched = len(present & chord_pcs)
+        missing = len(chord_pcs - present)
+        if root not in present:
+            continue
+        quality_preference = (len(preferred) - preferred.index(kind)) if kind in preferred else 0
+        candidates.append((matched, -missing, quality_preference, kind))
+    kind = max(candidates)[-1] if candidates else preferred[0]
+    return {"name": _chord_name(root, kind), "root": root,
+            "kind": kind, "intervals": CHORD_DEFINITIONS[kind][1], "source": "inferred"}
+
+
+def _chord_data(chord, group, key_mode):
+    if chord is None:
+        return _infer_chord(group, key_mode)
+    symbol = _get(chord, "symbol")
+    root_name = _get(symbol, "root") if symbol is not None else _get(chord, "root")
+    kind = _get(symbol, "kind") if symbol is not None else _get(chord, "kind")
+    if root_name in PITCH_CLASSES and kind in CHORD_DEFINITIONS:
+        return {"name": _get(symbol, "name", _chord_name(PITCH_CLASSES[root_name], kind)),
+                "root": PITCH_CLASSES[root_name], "kind": kind,
+                "intervals": CHORD_DEFINITIONS[kind][1], "source": "score"}
+    return _infer_chord(group, key_mode)
+
+
+def _add_chord_inner_notes(notes, chords, key_mode):
+    """Add the nearest chord tone below each melody when a bass/chord exists."""
+    groups = defaultdict(list)
+    for note in notes:
+        groups[note["start"]].append(note)
+    additions, labels = [], {}
+    previous_name = None
+    for start in sorted(groups):
+        group = groups[start]
+        bass = min(group, key=lambda item: item["sourceMidi"])
+        melody = max(group, key=lambda item: item["sourceMidi"])
+        chord = _active_chord(chords, start)
+        if bass is melody and chord is None:
+            continue
+        data = _chord_data(chord, group, key_mode)
+        if data["name"] != previous_name:
+            labels[str(start)] = data["name"]
+            previous_name = data["name"]
+        chord_pcs = {(data["root"] + interval) % 12 for interval in data["intervals"]}
+        existing = {item["sourceMidi"] for item in group}
+        lower = [value for value in range(melody["sourceMidi"] - 1, max(0, bass["sourceMidi"] - 12), -1)
+                 if value % 12 in chord_pcs]
+        if not lower:
+            lower = [value for value in range(melody["sourceMidi"] - 1, 0, -1)
+                     if value % 12 in chord_pcs]
+        if not lower:
+            continue
+        value = lower[0]
+        existing_target = next((item for item in group if item["sourceMidi"] == value), None)
+        if existing_target is not None:
+            existing_target["innerPriority"] = True
+            continue
+        generated = {**melody, "noteId": f"generated-inner-{start}",
+                     "sourcePitch": pitch_name(value), "sourceMidi": value,
+                     "guitarSoundingPitch": pitch_name(value - 12),
+                     "guitarSoundingMidi": value - 12,
+                     "guitarWrittenPitch": pitch_name(value), "generated": True,
+                     "innerPriority": True,
+                     "tie": None}
+        additions.append(generated)
+    return notes + additions, labels
 
 
 def _tie_groups(notes):
@@ -229,7 +319,8 @@ def _tab_text(notes):
     return "\n\n".join(blocks)
 
 
-def _tab_layout(notes):
+def _tab_layout(notes, chord_labels=None):
+    chord_labels = chord_labels or {}
     grouped = defaultdict(list)
     for note in notes:
         grouped[str(note.get("measure", ""))].append(note)
@@ -244,7 +335,7 @@ def _tab_layout(notes):
                 return note.get("string") or {"melody": 1, "bass": 6,
                                                "inner": 3, "accompaniment": 4}[note["role"]]
 
-            columns.append({"start": start, "notes": [
+            columns.append({"start": start, "chord": chord_labels.get(start), "notes": [
                 {"id": note["noteId"], "pitch": note["guitarWrittenPitch"],
                  "sourcePitch": note["sourcePitch"], "guitarSoundingPitch": note["guitarSoundingPitch"],
                  "role": note["role"], "string": display_string(note),
@@ -275,6 +366,9 @@ def build(notes, *, hand="both", mode="auto", max_voices=6, max_fret=20,
     if not normalized:
         raise SoloGuitarPipelineError("変換対象の音符がありません。")
     selected_mode = "solo" if mode == "auto" else mode
+    chord_labels = {}
+    if selected_mode in ("solo", "chord"):
+        normalized, chord_labels = _add_chord_inner_notes(normalized, chords, key_mode)
     groups = _classify(normalized, "chord" if selected_mode == "chord" else "solo")
     if selected_mode in ("melody", "single"):
         selected, removed = _select_voice(groups, "melody")
@@ -327,7 +421,9 @@ def build(notes, *, hand="both", mode="auto", max_voices=6, max_fret=20,
         output.update({"originalPitch": output["sourcePitch"],
                        "source_pitch": output["sourcePitch"],
                        "guitar_sounding_pitch": output["guitarSoundingPitch"],
-                       "guitar_written_pitch": output["guitarWrittenPitch"]})
+                       "guitar_written_pitch": output["guitarWrittenPitch"],
+                       "generated": row.get("generated", False),
+                       "innerPriority": row.get("innerPriority", False)})
         output_notes.append(output)
     warnings.extend(_tie_consistent(candidate_rows, output_notes))
     for item in output_notes:
@@ -354,7 +450,8 @@ def build(notes, *, hand="both", mode="auto", max_voices=6, max_fret=20,
         "candidates": public_candidates,
         "fingering": {**fingering, "notes": output_notes},
         "notes": output_notes,
-        "tabText": _tab_text(output_notes), "tabLayout": _tab_layout(output_notes),
+        "tabText": _tab_text(output_notes), "tabLayout": _tab_layout(output_notes, chord_labels),
+        "chords": [{"start": start, "name": name} for start, name in chord_labels.items()],
         "warnings": warnings,
     }
 

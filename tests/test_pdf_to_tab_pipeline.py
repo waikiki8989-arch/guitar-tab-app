@@ -34,5 +34,5 @@ def test_chord_aware_selection_keeps_bass_chord_tones_and_top_melody():
     pitches = [item["originalPitch"] for item in result["converted"]["convertedNotes"]]
     assert "C3" in pitches
     assert "B4" in pitches
-    assert "E3" in pitches or "G3" in pitches
-    assert {"C3", "E3", "G3", "B4"}.issuperset(pitches)
+    assert "G4" in pitches
+    assert {"C3", "E3", "G3", "G4", "B4"}.issuperset(pitches)

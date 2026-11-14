@@ -21,6 +21,13 @@ def test_open_string_is_preferred_for_beginner_mode():
     assert result["notes"][0]["fret"] == 0
 
 
+def test_melody_prefers_fret_one_or_two_over_a_higher_position():
+    result = optimize([{"pitch": "F#4", "role": "melody", "start": "1", "duration": "1",
+                        "candidates": [{"string": 1, "fret": 5}, {"string": 2, "fret": 1}]}])
+    assert result["notes"][0]["string"] == 2
+    assert result["notes"][0]["fret"] == 1
+
+
 def test_chord_never_uses_same_string_twice():
     result = optimize([note("C3", "1", [(5, 3), (4, 8)]), note("E3", "1", [(5, 7), (4, 2)])])
     assert len({item["string"] for item in result["notes"]}) == 2
