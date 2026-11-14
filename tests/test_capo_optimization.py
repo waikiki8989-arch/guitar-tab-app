@@ -1,6 +1,6 @@
 import pytest
 
-from capo_optimization import CapoOptimizationError, optimize, parse_chord, shape_for
+from capo_optimization import CapoOptimizationError, capo_from_key, optimize, parse_chord, shape_for
 
 
 PROGRESSION = [{"measure": i + 1, "beat": 1, "chord": chord}
@@ -35,6 +35,14 @@ def test_chord_parser_normalizes_aliases():
     assert form.name == "G"
     assert shape == "G"
     assert sounding == "Ab"
+
+
+def test_key_signature_selects_capo_for_open_chord_root():
+    # A-flat major is -4 fifths; capo 1 moves the shape to G.
+    assert capo_from_key(-4) == 1
+    result = optimize(PROGRESSION, key_fifths=-4)
+    assert result["recommended"]["capo"] == 1
+    assert result["recommended"]["keyPreferred"] is True
 
 
 @pytest.mark.parametrize("kwargs", [{"min_capo": 8, "max_capo": 7}, {"min_capo": -1}, {"top": 0}])

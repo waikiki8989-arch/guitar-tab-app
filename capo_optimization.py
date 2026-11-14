@@ -67,6 +67,48 @@ def transpose_root(root, semitones):
     return ROOTS[(ROOT_INDEX[root] + semitones) % 12]
 
 
+def capo_from_key(key_fifths, *, min_capo=0, max_capo=7):
+    """Choose a capo from the key signature's tonic.
+
+    In the circle of fifths, a tonic is seven semitones per fifth.  Prefer the
+    smallest capo that moves the tonic to a common open-chord root.
+    """
+    try:
+        fifths = int(key_fifths)
+        min_capo, max_capo = int(min_capo), int(max_capo)
+    except (TypeError, ValueError) as exc:
+        raise CapoOptimizationError("調号またはカポ範囲が不正です。") from exc
+    if not 0 <= min_capo <= max_capo <= 12:
+        raise CapoOptimizationError("カポ範囲は0〜12で指定してください。")
+    tonic = (7 * fifths) % 12
+    open_roots = {ROOT_INDEX[root] for root in ("C", "D", "E", "G", "A")}
+    possible = [capo for capo in range(min_capo, max_capo + 1)
+                if (tonic - capo) % 12 in open_roots]
+    return possible[0] if possible else min_capo
+
+
+def capo_for_key(key_fifths, *, key_mode="major", min_capo=0, max_capo=12):
+    """Return the C/Cm-form capo dictated by a key signature.
+
+    A key signature's tonic is represented by its position on the circle of
+    fifths.  In the solo-guitar mode the form is intentionally fixed: the
+    capo moves the C (or Cm) shape up to the sounding tonic.  This is kept
+    separate from :func:`capo_from_key`, which ranks several common open chord
+    roots for chord accompaniment.
+    """
+    if key_mode not in ("major", "minor"):
+        raise CapoOptimizationError("キーのモードが不正です。")
+    try:
+        fifths = int(key_fifths)
+        min_capo, max_capo = int(min_capo), int(max_capo)
+    except (TypeError, ValueError) as exc:
+        raise CapoOptimizationError("調号またはカポ範囲が不正です。") from exc
+    if not 0 <= min_capo <= max_capo <= 12:
+        raise CapoOptimizationError("カポ範囲は0〜12で指定してください。")
+    tonic = (7 * fifths) % 12
+    return min(max(tonic, min_capo), max_capo)
+
+
 def shape_for(sounding_chord, capo):
     root, suffix, bass = parse_chord(sounding_chord)
     shape_root = transpose_root(root, -capo)
@@ -85,13 +127,14 @@ def _score(forms, unsupported, previous=None):
     return open_count * 3 - barre_count * 5 - (sum(fret_values) / len(fret_values) if fret_values else 0) - movement - len(unsupported) * 10
 
 
-def optimize(chords, *, min_capo=0, max_capo=7, top=3):
+def optimize(chords, *, min_capo=0, max_capo=7, top=3, key_fifths=None):
     try:
         min_capo, max_capo, top = int(min_capo), int(max_capo), int(top)
     except (TypeError, ValueError) as exc:
         raise CapoOptimizationError("カポ範囲または候補数が不正です。") from exc
     if not 0 <= min_capo <= max_capo <= 12 or top < 1:
         raise CapoOptimizationError("カポ範囲は0〜12、候補数は1以上で指定してください。")
+    preferred = capo_from_key(key_fifths, min_capo=min_capo, max_capo=max_capo) if key_fifths is not None else None
     results = []
     for capo in range(min_capo, max_capo + 1):
         converted, forms, unsupported = [], [], []
@@ -111,7 +154,9 @@ def optimize(chords, *, min_capo=0, max_capo=7, top=3):
                               "fingering": form.data()["frets"] if form else None,
                               "warning": None if form else "対応するコードフォームがありません。"})
         score = _score(forms, unsupported)
-        results.append({"capo": capo, "score": round(score, 3), "chords": converted,
+        if preferred == capo:
+            score += 2
+        results.append({"capo": capo, "score": round(score, 3), "keyPreferred": preferred == capo, "chords": converted,
                         "unsupported": sorted(set(unsupported)),
                         "openStrings": sum(form.open_strings for form in forms),
                         "barreCount": sum(form.barre for form in forms),

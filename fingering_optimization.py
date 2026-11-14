@@ -16,9 +16,9 @@ class Placement:
 
 
 MODE_WEIGHTS = {
-    "beginner": {"open": 4, "move": 3, "string": 2, "high": 2, "barre": 8},
-    "standard": {"open": 2, "move": 2, "string": 1, "high": 1, "barre": 5},
-    "original": {"open": 0, "move": 1, "string": 0, "high": 0, "barre": 1},
+    "beginner": {"open": 4, "move": 3, "string": 2, "high": 2, "melodyPosition": 4, "barre": 8},
+    "standard": {"open": 2, "move": 2, "string": 1, "high": 1, "melodyPosition": 3, "barre": 5},
+    "original": {"open": 0, "move": 1, "string": 0, "high": 0, "melodyPosition": 1, "barre": 1},
 }
 
 
@@ -49,14 +49,18 @@ def _fraction(value):
     return Fraction(value)
 
 
-def _form_score(placements, weights):
+def _form_score(placements, weights, group=()):
     if not placements:
         return 0
     strings = {item.string for item in placements}
     frets = [item.fret for item in placements if item.fret > 0]
     span = max(frets) - min(frets) if frets else 0
+    melody_position = sum(max(0, placement.fret - 2) * weights["melodyPosition"]
+                          for placement, note in zip(placements, group)
+                          if _get(note, "role") == "melody" and placement.fret > 0)
     return (-sum(item.fret == 0 for item in placements) * weights["open"]
             + span * weights["move"] + sum(item.fret > 12 for item in placements) * weights["high"]
+            + melody_position
             + (5 if len(strings) < len(placements) else 0) * weights["barre"])
 
 
@@ -68,7 +72,7 @@ def _group_options(group, weights):
     for placement_set in product(*choices):
         if len({item.string for item in placement_set}) != len(placement_set):
             continue
-        options.append((tuple(placement_set), _form_score(placement_set, weights)))
+        options.append((tuple(placement_set), _form_score(placement_set, weights, group)))
     return sorted(options, key=lambda item: item[1])
 
 
@@ -111,7 +115,8 @@ def optimize(notes, *, mode="standard", capo=0, alternatives=3, large_move=10):
     selected = []
     for group, placements in zip(groups, best_path):
         for note, placement in zip(group, placements):
-            selected.append({"pitch": _get(note, "pitch"), "start": str(_get(note, "start", "0")),
+            selected.append({"noteId": _get(note, "noteId", _get(note, "note_id")),
+                             "pitch": _get(note, "pitch"), "start": str(_get(note, "start", "0")),
                              "duration": str(_get(note, "duration", "0")), "measure": _get(note, "measure", ""),
                              "string": placement.string, "fret": placement.fret,
                              "position": placement.fret, "difficulty": 1 if placement.fret <= 5 else 2,

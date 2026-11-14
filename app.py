@@ -21,6 +21,8 @@ import score_export
 import pdf_preview
 import omr
 from musicxml_parser import parse_score
+from pdf_to_tab_pipeline import build as build_pdf_tab
+from solo_guitar_pipeline import build as build_solo_tab
 
 from tab_generator import CHORDS, generate_chord_tab, generate_tab
 
@@ -79,6 +81,36 @@ def pdf_preview_page():
                         'measures': imported.measures,
                         'warnings': imported.notation.get('warnings', []),
                     }
+                if action == 'generate-tab':
+                    page_number = int(request.form.get('page', '1'))
+                    image = document.pages[page_number - 1].image
+                    imported = parse_score(omr.recognize_png(omr.png_from_data_url(image)))
+                    note_rows = [{
+                        'measure': note.measure, 'pitch': note.pitch,
+                        'start': str(note.start), 'duration': str(note.duration),
+                        'staff': {'1': '右手', '2': '左手'}.get(note.staff, '未指定'),
+                        'voice': note.voice or '未指定', 'confidence': None,
+                    } for note in imported.notes]
+                    recognition = {
+                        'page': page_number,
+                        'notes': note_rows,
+                        'measures': imported.measures,
+                        'warnings': imported.notation.get('warnings', []),
+                    }
+                    capo_value = request.form.get('capo', 'auto')
+                    capo = None if capo_value in ('', 'auto') else int(capo_value)
+                    key_changes = [change for change in imported.notation.get('changes', [])
+                                   if change.get('kind') == 'key' and change.get('start') == '0']
+                    key_fifths = key_changes[0].get('value', 0) if key_changes else 0
+                    tab_result = build_pdf_tab(imported.notes,
+                                               hand=request.form.get('hand', 'both'),
+                                               mode=request.form.get('conversion_mode', 'auto'),
+                                               max_voices=int(request.form.get('max_voices', '3')),
+                                               max_fret=int(request.form.get('max_fret', '20')),
+                                               fingering_mode=request.form.get('fingering_mode', 'standard'),
+                                               key_mode=request.form.get('key_mode', 'major'),
+                                               capo=capo, key_fifths=key_fifths,
+                                               chords=imported.harmonies)
             data = {'fileName': document.file_name, 'fileSize': document.file_size,
                     'pageCount': len(document.pages), 'selectedPages': selected,
                     'currentPage': min(max(current, 1), len(document.pages)),
@@ -88,10 +120,10 @@ def pdf_preview_page():
         except (pdf_preview.PdfPreviewError, ValueError) as exc:
             error = str(exc)
     return render_template('pdf_preview.html', data=data, pdf_key=key, error=error,
-                           recognition=locals().get('recognition'))
+                           recognition=locals().get('recognition'), tab_result=locals().get('tab_result'))
 
 
-def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, output_settings=None, filename="", filters=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, output_settings=None, filename="", filters=None, solo_result=None, **context):
     output_settings = export_settings.normalize(output_settings)
     filters = filters or {}
     fingering_rows, fingering_error = (), None
@@ -160,7 +192,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                            tab_state=tab_state,
                            tab_selected=next((r for r in fingering_rows if tab_state and r["note"].note_id == tab_state["selected"]), None),
                            fingering_state=fingering_state, fingering_rows=fingering_rows, fingering_error=fingering_error,
-                           filename=filename, filters=filters, **context)
+                           filename=filename, filters=filters, solo_result=solo_result, **context)
 
 
 @app.errorhandler(413)
@@ -259,6 +291,7 @@ def index():
     filters = {}
     filename = ""
     message = None
+    solo_result = None
     response_status = 200
 
     if request.method == "POST":
@@ -332,6 +365,26 @@ def index():
                 new_name = project.name(request.form.get('project_name', ''))
                 project_state = {**project_state, 'name': new_name}
                 message = 'プロジェクト名を変更しました。ファイルに残すにはプロジェクトを保存してください。'
+            elif mode == 'solo_tab':
+                if selection is None:
+                    raise ValueError('先にMusicXMLファイルを読み込んでください。')
+                key_changes = [change for change in notation.get('changes', [])
+                               if change.get('kind') == 'key' and str(change.get('start')) in ('0', '0/1')]
+                key_fifths = key_changes[0].get('value', 0) if key_changes else 0
+                capo_value = request.form.get('capo', 'auto')
+                solo_result = build_solo_tab(
+                    selection.notes,
+                    hand=request.form.get('hand', 'both'),
+                    mode=request.form.get('solo_mode', 'auto'),
+                    max_voices=request.form.get('max_voices', '6'),
+                    max_fret=request.form.get('max_fret', '20'),
+                    fingering_mode=request.form.get('fingering_mode', 'standard'),
+                    capo=None if capo_value in ('', 'auto') else capo_value,
+                    key_fifths=key_fifths,
+                    key_mode=request.form.get('key_mode', 'major'),
+                    chords=progression.events if progression is not None else (),
+                )
+                message = 'ソロギターTAB譜を生成しました。未変換音と警告を確認してください。'
             elif mode == "arrangement":
                 if selection is None or progression is None:
                     raise ValueError("先にMusicXMLファイルを読み込んでください。")
@@ -474,6 +527,7 @@ def index():
         filename=filename,
         filters=filters,
         message=message,
+        solo_result=solo_result,
     ), response_status
 
 
