@@ -91,8 +91,14 @@ def build_tab_preview(selection, progression, notation, fingering, rows, title='
                 # OSMD uses the source timestamp to map split graphical notes back to original IDs.
                 note_map.append({'start': float(cursor), 'note_id': row['note'].note_id,
                                  'measure': measure.number, 'beat': float(cursor - measure.start),
-                                 'pitch': row['note'].pitch, 'string': row['position'][0] if row['position'] else None,
+                                 'role': row.get('role', 'melody'),
+                                 'source_pitch': row['note'].pitch,
+                                 'guitar_sounding_pitch': row['guitar_pitch'],
+                                 'guitar_written_pitch': row['guitar_written_pitch'],
+                                 'pitch': row['note'].pitch,
+                                 'string': row['position'][0] if row['position'] else None,
                                  'fret': row['position'][1] if row['position'] else None,
+                                 'physical_fret': row['position'][1] if row['position'] else None,
                                  'duration': str(row['note'].duration),
                                  'missing': row['position'] is None, 'type': original.findtext('type'),
                                  'dots': len(original.findall('dot'))})
@@ -113,7 +119,7 @@ def build_tab_preview(selection, progression, notation, fingering, rows, title='
                     tab_note.insert(list(tab_note).index(notations), head)
             cursor += Fraction(original.findtext('duration')) / divisions
     preview.update(xml=ET.tostring(root, encoding='unicode', xml_declaration=True),
-                   guitar=True, note_map=note_map, missing=missing)
+                   guitar=True, capo=0, note_map=note_map, missing=missing)
     if missing:
         preview['warnings'].append('未変換の音はTAB上の×で示します。再生前に下の対象箇所を確認してください。')
     return preview

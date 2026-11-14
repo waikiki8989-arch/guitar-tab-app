@@ -73,6 +73,8 @@ summary { cursor: pointer; }
 .playback-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .score-scroll { overflow-x: auto; background: white; border: 1px solid #ddd; }
 #score-sheet { min-width: 640px; position: relative; }
+.score-view-controls { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin: .5rem 0; }
+.score-view-controls output { min-width: 4rem; text-align: center; }
 button:disabled { opacity: .5; cursor: default; }
 
 .fingering-table td:nth-child(7) { white-space: normal; min-width: 16em; }
