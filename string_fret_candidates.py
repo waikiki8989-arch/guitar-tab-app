@@ -35,16 +35,19 @@ def pitch_to_midi(pitch: str) -> int:
     return (int(match.group(2)) + 1) * 12 + names[match.group(1)]
 
 
-def candidates(pitch: str, *, max_fret: int = 20, open_strings: str = "prefer"):
+def candidates(pitch: str, *, max_fret: int = 20, open_strings: str = "prefer", capo: int = 0):
     if not 0 <= int(max_fret) <= 36:
         raise StringFretError("最大フレットは0〜36です。")
+    if not 0 <= int(capo) <= 12:
+        raise StringFretError("カポは0〜12で指定してください。")
     if open_strings not in ("prefer", "allow", "exclude"):
         raise StringFretError("開放弦の設定が不正です。")
     target = pitch_to_midi(pitch)
-    result = [Candidate(string, target - opened)
+    capo = int(capo)
+    result = [Candidate(string, target - opened - capo)
               for string, opened in OPEN_STRING_MIDI.items()
-              if MIN_FRET <= target - opened <= int(max_fret)
-              and not (open_strings == "exclude" and target == opened)]
+              if MIN_FRET <= target - opened - capo <= int(max_fret)
+              and not (open_strings == "exclude" and target == opened + capo)]
     result.sort(key=lambda item: (0 if item.fret == 0 else 1, item.fret, item.string))
     return result
 

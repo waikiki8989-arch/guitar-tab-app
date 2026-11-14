@@ -87,6 +87,28 @@ def capo_from_key(key_fifths, *, min_capo=0, max_capo=7):
     return possible[0] if possible else min_capo
 
 
+def capo_for_key(key_fifths, *, key_mode="major", min_capo=0, max_capo=12):
+    """Return the C/Cm-form capo dictated by a key signature.
+
+    A key signature's tonic is represented by its position on the circle of
+    fifths.  In the solo-guitar mode the form is intentionally fixed: the
+    capo moves the C (or Cm) shape up to the sounding tonic.  This is kept
+    separate from :func:`capo_from_key`, which ranks several common open chord
+    roots for chord accompaniment.
+    """
+    if key_mode not in ("major", "minor"):
+        raise CapoOptimizationError("キーのモードが不正です。")
+    try:
+        fifths = int(key_fifths)
+        min_capo, max_capo = int(min_capo), int(max_capo)
+    except (TypeError, ValueError) as exc:
+        raise CapoOptimizationError("調号またはカポ範囲が不正です。") from exc
+    if not 0 <= min_capo <= max_capo <= 12:
+        raise CapoOptimizationError("カポ範囲は0〜12で指定してください。")
+    tonic = (7 * fifths) % 12
+    return min(max(tonic, min_capo), max_capo)
+
+
 def shape_for(sounding_chord, capo):
     root, suffix, bass = parse_chord(sounding_chord)
     shape_root = transpose_root(root, -capo)

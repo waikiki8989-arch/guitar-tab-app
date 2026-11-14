@@ -45,3 +45,26 @@ def test_pdf_page_recognition_renders_parser_result(monkeypatch):
     assert response.status_code == 200
     assert "認識結果（1ページ）" in response.get_data(as_text=True)
     assert "音符数" in response.get_data(as_text=True)
+
+
+def test_pdf_page_generation_uses_shared_solo_pipeline(monkeypatch):
+    fixture = Path("tests/fixtures/score_playback.musicxml").read_bytes()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 100), "test")
+    pdf_key, _ = pdf_preview.load(pdf.tobytes(), "楽譜.pdf")
+    pdf.close()
+    monkeypatch.setattr(app_module.omr, "recognize_png", lambda _: fixture)
+
+    response = app_module.app.test_client().post(
+        "/pdf", data={"action": "generate-tab", "pdf_key": pdf_key, "page": "1",
+                      "conversion_mode": "auto", "key_mode": "major", "capo": "auto",
+                      "max_voices": "3", "max_fret": "20"}
+    )
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "ギターTAB譜（" in html
+    assert "認識結果（1ページ）" in html
+    assert "五線譜とギターTAB譜" in html
+    assert "自動判定（ソロギター）" in html

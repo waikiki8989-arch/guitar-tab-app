@@ -82,6 +82,33 @@
                     <p>音高のある音符はありません（休符のみの楽譜）。</p>
                 {% endif %}
             </section>
+
+            <section aria-labelledby="solo-tab-heading">
+                <h2 id="solo-tab-heading">MusicXMLからソロギターTAB譜を生成</h2>
+                <p>読み込んだ音符を元の音高・分数形式の時間情報のまま分類し、五線譜とTAB譜で共有できる編曲データへ変換します。</p>
+                <form method="post" action="{{ url_for('index') }}">
+                    <input type="hidden" name="mode" value="solo_tab">
+                    <input type="hidden" name="score_state" value="{{ state_token }}">
+                    <label>演奏モード <select name="solo_mode"><option value="auto">自動判定</option><option value="solo">ソロギター</option><option value="chord">コード伴奏</option><option value="melody">メロディー中心</option></select></label>
+                    <label>対象 <select name="hand"><option value="both">両手</option><option value="right">右手のみ</option><option value="left">左手のみ</option></select></label>
+                    <label>最大同時発音数 <input name="max_voices" type="number" min="1" max="6" value="6"></label>
+                    <label>最大フレット <input name="max_fret" type="number" min="0" max="36" value="20"></label>
+                    <label>運指 <select name="fingering_mode"><option value="beginner">初心者向け</option><option value="standard" selected>標準</option><option value="original">原曲重視</option></select></label>
+                    <label>キー <select name="key_mode"><option value="major" selected>メジャー（Cフォーム）</option><option value="minor">マイナー（Cmフォーム）</option></select></label>
+                    <label>カポ <select name="capo"><option value="auto" selected>キーから自動</option>{% for value in range(13) %}<option value="{{ value }}">{{ value }}フレット</option>{% endfor %}</select></label>
+                    <button type="submit">ソロギターTAB譜を生成</button>
+                </form>
+            </section>
+
+            {% if solo_result %}
+                <section aria-labelledby="solo-result-heading">
+                    <h2 id="solo-result-heading">ソロギターTAB譜（カポ{{ solo_result.settings.capo }}、{{ solo_result.settings.capoForm }}フォーム）</h2>
+                    <p>メロディー・ベース・内声を含む{{ solo_result.notes|length }}音を処理しました。</p>
+                    {% if solo_result.warnings %}<div class="error"><strong>確認が必要な項目</strong><ul>{% for warning in solo_result.warnings %}<li>{% if warning is string %}{{ warning }}{% else %}{{ warning.pitch or '' }}：{{ warning.reason }}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
+                    <pre class="tab">{{ solo_result.tabText }}</pre>
+                    <details><summary>変換音符の詳細</summary><div class="score-table" tabindex="0" role="region" aria-label="ソロギターTAB変換結果"><table><thead><tr><th>役割</th><th>元の音</th><th>ギター実音</th><th>五線譜表記</th><th>弦</th><th>TABフレット</th><th>開始</th><th>長さ</th></tr></thead><tbody>{% for note in solo_result.notes %}<tr><td>{{ {'melody':'メロディー','bass':'ベース','inner':'内声','accompaniment':'伴奏'}[note.role] }}</td><td>{{ note.sourcePitch }}</td><td>{{ note.guitarSoundingPitch }}</td><td>{{ note.guitarWrittenPitch }}</td><td>{{ note.string or '×' }}</td><td>{{ note.fret if note.fret is not none else '×' }}</td><td>{{ note.start }}</td><td>{{ note.duration }}</td></tr>{% endfor %}</tbody></table></div></details>
+                </section>
+            {% endif %}
         {% endif %}
 
         <section>

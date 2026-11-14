@@ -6,6 +6,7 @@ from string_fret_candidates import candidates
 from fingering_optimization import optimize as optimize_fingering
 from capo_optimization import optimize as optimize_capo
 from chord_progression import CHORD_DEFINITIONS
+from solo_guitar_pipeline import build as build_solo_guitar
 
 
 def _candidate_notes(converted, max_fret):
@@ -121,7 +122,20 @@ def _fraction(value):
 
 
 def build(notes, *, hand="both", mode="melody", max_voices=3, max_fret=20,
-          fingering_mode="standard", capo=None, key_fifths=None, chords=()):
+          fingering_mode="standard", capo=None, key_fifths=None, key_mode="major", chords=()):
+    if mode in ("auto", "solo", "chord", "melody", "bass", "single"):
+        shared_capo = capo
+        # Keep the old open-chord recommendation for the legacy single-voice
+        # modes when this function is called directly.  The PDF UI defaults to
+        # ``auto`` and therefore uses the Issue #51 C/Cm-form strategy.
+        if shared_capo is None and mode in ("melody", "bass", "single") and key_fifths is not None:
+            from capo_optimization import capo_from_key
+            shared_capo = capo_from_key(key_fifths)
+        effective_mode = "solo" if mode == "melody" and chords else mode
+        return build_solo_guitar(notes, hand=hand, mode=effective_mode, max_voices=max_voices,
+                                 max_fret=max_fret, fingering_mode=fingering_mode,
+                                 capo=shared_capo, key_fifths=key_fifths or 0,
+                                 key_mode=key_mode, chords=chords)
     if capo is None:
         from capo_optimization import capo_from_key
         capo = capo_from_key(key_fifths or 0)

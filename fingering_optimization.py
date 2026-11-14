@@ -111,7 +111,8 @@ def optimize(notes, *, mode="standard", capo=0, alternatives=3, large_move=10):
     selected = []
     for group, placements in zip(groups, best_path):
         for note, placement in zip(group, placements):
-            selected.append({"pitch": _get(note, "pitch"), "start": str(_get(note, "start", "0")),
+            selected.append({"noteId": _get(note, "noteId", _get(note, "note_id")),
+                             "pitch": _get(note, "pitch"), "start": str(_get(note, "start", "0")),
                              "duration": str(_get(note, "duration", "0")), "measure": _get(note, "measure", ""),
                              "string": placement.string, "fret": placement.fret,
                              "position": placement.fret, "difficulty": 1 if placement.fret <= 5 else 2,
