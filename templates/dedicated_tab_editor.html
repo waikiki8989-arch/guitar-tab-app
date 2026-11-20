@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TAB譜編集</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dedicated-tab-page">
+<main>
+    <p><a href="{{ url_for('pdf_preview_page') }}">PDF確認画面へ戻る</a></p>
+    <h1>TAB譜編集</h1>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    {% if state %}
+    <p>PDFから生成したTABを直接編集できます。標準チューニング、0〜24フレット、正確な分数の時間情報を使用します。</p>
+    <div id="dedicated-tab-editor" data-score-state="{{ state_token }}">
+        <div class="dedicated-toolbar" aria-label="TAB編集ツール">
+            <button type="button" data-command="save" id="tab-document-save">保存</button>
+            <button type="button" data-command="undo" id="tab-document-undo">元に戻す</button>
+            <button type="button" data-command="redo" id="tab-document-redo">やり直す</button>
+            <button type="button" data-command="play" id="tab-document-play">再生</button>
+            <button type="button" data-command="stop" id="tab-document-stop" disabled>停止</button>
+            <button type="button" data-command="download-xml" id="tab-document-xml">MusicXML出力</button>
+            <button type="button" id="tab-document-print">印刷</button>
+        </div>
+        <p id="tab-document-status" role="status">音符を選択してください。</p>
+        <section class="dedicated-score-workspace" aria-labelledby="dedicated-score-heading">
+            <h2 id="dedicated-score-heading">TAB譜</h2>
+            <p id="dedicated-score-status" role="status">音符をクリックして編集する音符を選択してください。</p>
+            <div id="dedicated-score-sheet" class="dedicated-score-sheet" role="region" aria-label="TAB譜の表示"></div>
+        </section>
+        <div class="dedicated-editor-grid">
+            <section class="dedicated-tab-panel" aria-labelledby="dedicated-tab-heading">
+                <h2 id="dedicated-tab-heading">TAB譜表示</h2>
+                {% for measure in layout %}
+                <div class="dedicated-measure" data-measure="{{ measure.number }}">
+                    <strong class="dedicated-measure-label">小節 {{ measure.number }}</strong>
+                    <div class="dedicated-tab-lines">
+                        {% for string in [1,2,3,4,5,6] %}
+                        <div class="dedicated-tab-line"><span class="dedicated-string-label">{{ {1:'e',2:'B',3:'G',4:'D',5:'A',6:'E'}[string] }}|</span>
+                        {% for column in measure.columns %}<span class="dedicated-tab-cell">{% for event in column.events if event.string == string or (event.rest and string == 1) or (not event.rest and event.string is none and string == 1) %}<button type="button" class="dedicated-tab-event{% if event.event_id == state.selected %} selected{% endif %}{% if event.rest %} rest{% endif %}{% if not event.rest and event.string is none %} missing{% endif %}" data-event-id="{{ event.event_id }}" aria-label="{{ event.event_id }}・{{ string }}弦・{{ event.fret if event.fret is not none else ('未変換' if not event.rest else '休符') }}">{{ '𝄽' if event.rest else ('×' if event.string is none else event.fret) }}</button>{% else %}-{% endfor %}</span>{% endfor %}</div>
+                    {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </section>
+            <aside class="dedicated-inspector" aria-labelledby="dedicated-inspector-heading">
+                <h2 id="dedicated-inspector-heading">音符編集</h2>
+                <p id="tab-selected-label">未選択</p>
+                <label>弦 <select id="tab-document-string"><option value="1">1弦</option><option value="2">2弦</option><option value="3">3弦</option><option value="4">4弦</option><option value="5">5弦</option><option value="6">6弦</option></select></label>
+                <label>フレット <input id="tab-document-fret" type="number" min="0" max="24" inputmode="numeric"></label>
+                <label>音価 <select id="tab-document-duration"><option value="4">全音符</option><option value="2">2分音符</option><option value="1" selected>4分音符</option><option value="1/2">8分音符</option><option value="1/4">16分音符</option><option value="3/2">付点2分音符</option><option value="3/4">付点4分音符</option></select></label>
+                <div class="button-row"><button type="button" id="tab-document-apply">変更を確定</button><button type="button" id="tab-document-delete">削除</button></div>
+                <button type="button" id="tab-document-rest">選択音符を休符にする</button>
+                <h3>音符追加</h3>
+                <label>開始位置 <input id="tab-document-add-start" value="0" pattern="[0-9]+(/[0-9]+)?"></label>
+                <label>音価 <input id="tab-document-add-duration" value="1" pattern="[0-9]+(/[0-9]+)?"></label>
+                <label>弦 <select id="tab-document-add-string"><option value="1">1弦</option><option value="2">2弦</option><option value="3">3弦</option><option value="4">4弦</option><option value="5">5弦</option><option value="6">6弦</option></select></label>
+                <label>フレット <input id="tab-document-add-fret" type="number" min="0" max="24" value="0"></label>
+                <button type="button" id="tab-document-add">音符を追加</button>
+                <button type="button" id="tab-document-add-rest">休符を追加</button>
+                <p class="help">数字キーで選択中のフレットを入力、↑↓で増減、Enterで確定、Escapeで入力を戻せます。</p>
+            </aside>
+        </div>
+        <section id="guitar-fretboard-panel" class="guitar-fretboard-panel" hidden aria-labelledby="guitar-fretboard-heading">
+            <div class="guitar-fretboard-heading-row">
+                <div>
+                    <h2 id="guitar-fretboard-heading">ギターフレットボード</h2>
+                    <p id="guitar-fretboard-status">選択した音符の音高に合う位置を表示します。弦・フレットを押すと運指を変更できます。</p>
+                </div>
+                <span id="guitar-fretboard-pitch" class="guitar-fretboard-pitch"></span>
+            </div>
+            <div class="guitar-fretboard-scroll"><div id="guitar-fretboard" class="guitar-fretboard"></div></div>
+        </section>
+        <script id="tab-score-xml" type="application/json">{{ score_xml|tojson }}</script>
+        <script id="tab-document-data" type="application/json">{{ state.tab_document|tojson }}</script>
+        <script defer src="{{ url_for('static', filename='vendor/opensheetmusicdisplay-2.1.2.min.js') }}"></script>
+        <script defer src="{{ url_for('static', filename='dedicated_tab_editor.js') }}"></script>
+    </div>
+    {% else %}
+    <p>編集するTABデータがありません。PDF確認画面からTAB譜を生成してください。</p>
+    {% endif %}
+</main>
+</body>
+</html>

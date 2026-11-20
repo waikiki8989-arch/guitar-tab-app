@@ -42,6 +42,7 @@
 
         {% if notes is not none %}
             {% include 'score_preview.html' %}
+            {% if dedicated_tab_token %}<section class="recognition-note" aria-labelledby="dedicated-tab-link-heading"><h2 id="dedicated-tab-link-heading">TAB譜専用編集</h2><p>保存済みのTAB編集データを、TABのみの編集画面で開けます。</p><form method="post" action="{{ url_for('dedicated_tab_editor') }}"><input type="hidden" name="score_state" value="{{ dedicated_tab_token }}"><button type="submit">TAB譜を編集</button></form></section>{% endif %}
             {% include 'arrangement_editor.html' %}
             {% include 'export_editor.html' %}
             {% if progression is not none %}{% include 'chord_estimator.html' %}{% endif %}

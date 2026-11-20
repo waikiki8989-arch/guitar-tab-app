@@ -8,6 +8,7 @@ import json
 import re
 
 import export_settings
+import tab_document
 
 from defusedxml import ElementTree as SafeET
 from music21.pitch import Pitch
@@ -18,7 +19,7 @@ from fingering import TUNING
 from musicxml_parser import ScoreNote
 
 FORMAT = 'guitar-tab-project'
-VERSION = 2
+VERSION = 3
 MAX_PROJECT_BYTES = 8 * 1024 * 1024
 MAX_ITEMS = 10000
 ARRANGEMENT_FIELDS = ('notes', 'next_id', 'span_limit', 'baseline')
@@ -41,12 +42,14 @@ def filename(value):
     return stem + '.guitar-tab.json'
 
 
-def snapshot(selection, progression, notation, fingering, arrangement, source_filename, output_settings=None):
+def snapshot(selection, progression, notation, fingering, arrangement, source_filename, output_settings=None,
+             tab_document_data=None):
     return deepcopy({'selection': selection.to_data(), 'progression': progression.to_data(),
         'notation': notation, 'fingering': fingering, 'filename': source_filename,
         'export_settings': export_settings.normalize(output_settings),
         'tuning': {str(k): v for k, v in TUNING.items()},
-        'arrangement': {k: arrangement[k] for k in ARRANGEMENT_FIELDS} if arrangement is not None else None})
+        'arrangement': {k: arrangement[k] for k in ARRANGEMENT_FIELDS} if arrangement is not None else None,
+        'tab_document': tab_document_data})
 
 
 def digest(data, project_name):
@@ -324,8 +327,8 @@ def validate(document):
     obj(document, ('format', 'version', 'project', 'data'), 'ファイル構造')
     if document['format'] != FORMAT:
         fail('形式', 'Guitar Tab Appのプロジェクトではありません')
-    if type(document['version']) is not int or document['version'] not in (1, VERSION):
-        fail('形式バージョン', '未対応のバージョンです（対応：1・2）')
+    if type(document['version']) is not int or document['version'] not in (1, 2, VERSION):
+        fail('形式バージョン', '未対応のバージョンです（対応：1・2・3）')
     metadata = obj(document['project'], ('name', 'created_at', 'updated_at'), 'プロジェクト情報')
     name(metadata['name'])
     dates = []
@@ -341,10 +344,13 @@ def validate(document):
     if dates[1] < dates[0]:
         fail('更新日時', '作成日時より前です')
     keys = ('selection', 'progression', 'notation', 'fingering', 'filename', 'tuning', 'arrangement')
-    if document['version'] == 2:
+    if document['version'] in (2, VERSION):
         keys += ('export_settings',)
+    if document['version'] == VERSION or (isinstance(document.get('data'), dict)
+                                          and 'tab_document' in document['data']):
+        keys += ('tab_document',)
     data = obj(document['data'], keys, '保存内容')
-    if document['version'] == 2:
+    if document['version'] in (2, VERSION):
         export_settings.normalize(data['export_settings'])
     text(data['filename'], '元ファイル名')
     obj(data['tuning'], (str(k) for k in TUNING), 'チューニング')
@@ -355,6 +361,8 @@ def validate(document):
     validate_notation(data['notation'])
     validate_fingering(data['fingering'], notes, selected)
     validate_arrangement(data['arrangement'], notes, end)
+    if data.get('tab_document') is not None:
+        tab_document.validate(data['tab_document'], end=end)
 
 
 def _unique_object(pairs):
@@ -378,6 +386,8 @@ def loads(raw):
     except (TypeError, KeyError, OverflowError) as exc:
         raise ValueError('プロジェクトの項目・データ型が不正です。') from exc
     if document['version'] == 1:
-        document['version'] = VERSION
+        document['version'] = 2
         document['data']['export_settings'] = export_settings.normalize()
+    if document['version'] == 2:
+        document['data'].setdefault('tab_document', None)
     return document

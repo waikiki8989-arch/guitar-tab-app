@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} - TAB印刷</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><main><button type="button" onclick="window.print()">印刷</button><h1>{{ title }}</h1>
+<div class="dedicated-tab-panel dedicated-print-tab">{% for measure in layout %}<section class="dedicated-measure"><strong class="dedicated-measure-label">小節 {{ measure.number }}</strong><div class="dedicated-tab-lines">{% for string in [1,2,3,4,5,6] %}<div class="dedicated-tab-line"><span class="dedicated-string-label">{{ {1:'e',2:'B',3:'G',4:'D',5:'A',6:'E'}[string] }}|</span>{% for column in measure.columns %}<span class="dedicated-tab-cell">{% for event in column.events if event.string == string or (event.rest and string == 1) %}{{ '𝄽' if event.rest else event.fret }}{% else %}-{% endfor %}</span>{% endfor %}</div>{% endfor %}</div></section>{% endfor %}</div></main></body></html>

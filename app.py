@@ -18,6 +18,7 @@ from arrangement_score import build_arrangement_preview
 import project
 import export_settings
 import score_export
+import tab_document
 import pdf_preview
 import omr
 from musicxml_parser import parse_score
@@ -49,6 +50,147 @@ def pdf_editor_token(imported, filename):
     })
 
 
+def pdf_tab_editor_token(document, filename, base=None):
+    """Sign a PDF-generated TAB document for the dedicated editor."""
+    return state_serializer().dumps({
+        "kind": "tab_editor", "tab_document": document, "filename": filename,
+        "title": filename.rsplit('.', 1)[0] or 'PDF TAB', "selected": None,
+        "undo": [], "redo": [], "base": base,
+    })
+
+
+def _tab_editor_state(token):
+    try:
+        state = state_serializer().loads(token, max_age=8 * 60 * 60)
+    except BadData as exc:
+        raise ValueError('TAB編集の作業情報が無効または期限切れです。PDFからTABを再生成してください。') from exc
+    if state.get('kind') != 'tab_editor':
+        raise ValueError('TAB編集の作業情報が不正です。')
+    state['tab_document'] = tab_document.validate(state['tab_document'])
+    state.setdefault('selected', None)
+    state.setdefault('undo', [])
+    state.setdefault('redo', [])
+    return state
+
+
+def _tab_editor_token(state):
+    return state_serializer().dumps({
+        "kind": "tab_editor", "tab_document": state["tab_document"],
+        "filename": state.get("filename", "TAB"), "title": state.get("title", "TAB編集"),
+        "selected": state.get("selected"), "undo": state.get("undo", [])[-20:],
+        "redo": state.get("redo", [])[-20:], "base": state.get("base"),
+    })
+
+
+@app.route('/tab-editor', methods=['GET', 'POST'])
+def dedicated_tab_editor():
+    token = request.form.get('score_state') if request.method == 'POST' else request.args.get('score_state', '')
+    state = None
+    error = None
+    if token:
+        try:
+            state = _tab_editor_state(token)
+            if request.method == 'POST':
+                action = request.form.get('tab_action')
+                if action:
+                    state, _ = _apply_tab_editor_action(state, {"type": action, **{
+                        key: request.form.get(key) for key in ('event_id', 'string', 'fret', 'duration', 'dots', 'tie')
+                    }})
+                    token = _tab_editor_token(state)
+        except ValueError as exc:
+            error = str(exc)
+    elif request.method == 'POST':
+        error = 'TAB編集の作業情報がありません。PDFからTABを生成してください。'
+    score_xml = None
+    if state:
+        try:
+            score_xml = tab_document.to_musicxml(state['tab_document'], state.get('title', 'TAB編集'))
+        except ValueError as exc:
+            error = str(exc)
+    return render_template('dedicated_tab_editor.html', state=state, state_token=token, error=error,
+                           layout=tab_document.layout(state['tab_document']) if state else (), score_xml=score_xml)
+
+
+def _command_values(command):
+    """Coerce only the primitive form values used by the small HTML fallback."""
+    result = dict(command)
+    for key in ('string', 'fret', 'dots'):
+        if key in result and result[key] not in (None, ''):
+            try:
+                result[key] = int(result[key])
+            except (TypeError, ValueError):
+                pass
+    return result
+
+
+def _apply_tab_editor_action(state, command):
+    action = command.get('type')
+    if action in ('undo', 'redo'):
+        source, destination = ('undo', 'redo') if action == 'undo' else ('redo', 'undo')
+        if not state[source]:
+            raise ValueError('戻せるTAB編集がありません。')
+        state[destination].append(state['tab_document'])
+        state['tab_document'] = state[source].pop()
+    else:
+        state['undo'] = (state['undo'] + [state['tab_document']])[-20:]
+        state['redo'] = []
+        state['tab_document'] = tab_document.apply_command(state['tab_document'], _command_values(command))
+        if action == 'delete_event' and state.get('selected') == command.get('event_id'):
+            state['selected'] = None
+    if command.get('event_id') and action != 'delete_event':
+        state['selected'] = command['event_id']
+    return state, _tab_editor_token(state)
+
+
+@app.post('/api/tab/command')
+def tab_command():
+    payload = request.get_json(silent=True) or {}
+    try:
+        state = _tab_editor_state(payload.get('score_state', ''))
+        command = payload.get('command')
+        state, token = _apply_tab_editor_action(state, command)
+        document = state['tab_document']
+        return jsonify(document=document, playback_events=tab_document.playback_events(document),
+                       musicxml=tab_document.to_musicxml(document, state.get('title', 'TAB編集')),
+                       selected=state.get('selected'), state_token=token, warnings=[])
+    except (BadData, KeyError, TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.post('/tab-editor/musicxml')
+def tab_editor_musicxml():
+    try:
+        payload = request.get_json(silent=True) or {}
+        state = _tab_editor_state(payload.get('score_state', ''))
+        xml = tab_document.to_musicxml(state['tab_document'], state.get('title', 'TAB編集'))
+        return send_file(BytesIO(xml.encode('utf-8')), mimetype='application/vnd.recordare.musicxml+xml',
+                         as_attachment=True, download_name='guitar-tab.musicxml')
+    except (BadData, KeyError, TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.post('/tab-editor/project')
+def tab_editor_project():
+    try:
+        payload = request.get_json(silent=True) or {}
+        state = _tab_editor_state(payload.get('score_state', ''))
+        base = state.get('base')
+        if not base:
+            raise ValueError('このTABデータには元楽譜のプロジェクト情報がありません。')
+        selection = MelodySelection.from_data(base['selection'])
+        progression = ChordProgression.from_data(base['progression'])
+        fingering = base.get('fingering') or {'max_fret': 24, 'octave': 0, 'choices': {}, 'locks': {}}
+        data = project.snapshot(selection, progression, base.get('notation', {'changes': [], 'warnings': []}),
+                                fingering, None, state.get('filename', 'guitar-tab'), None,
+                                state['tab_document'])
+        metadata = project.track(data)
+        content = project.dumps(data, metadata)
+        return send_file(BytesIO(content), mimetype='application/json', as_attachment=True,
+                         download_name=project.filename(metadata['name']))
+    except (BadData, KeyError, TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+
 @app.route('/pdf', methods=['GET', 'POST'])
 def pdf_preview_page():
     data = None
@@ -59,6 +201,7 @@ def pdf_preview_page():
     scale = 1
     rotation = 0
     editor_token = None
+    tab_editor_token = None
     if request.method == 'POST':
         try:
             action = request.form.get('action')
@@ -126,6 +269,16 @@ def pdf_preview_page():
                                                key_mode=request.form.get('key_mode', 'major'),
                                                capo=capo, key_fifths=key_fifths,
                                                chords=imported.harmonies)
+                    tab_doc = tab_document.from_pipeline(
+                        tab_result, [{"number": measure.number, "start": str(measure.start),
+                                      "duration": str(measure.duration)} for measure in imported.measures])
+                    pdf_selection = MelodySelection(imported.notes)
+                    pdf_progression = ChordProgression.from_import(imported.measures, imported.harmonies)
+                    tab_editor_token = pdf_tab_editor_token(tab_doc, document.file_name, {
+                        'selection': pdf_selection.to_data(), 'progression': pdf_progression.to_data(),
+                        'notation': imported.notation,
+                        'fingering': {'max_fret': 24, 'octave': 0, 'choices': {}, 'locks': {}},
+                    })
             data = {'fileName': document.file_name, 'fileSize': document.file_size,
                     'pageCount': len(document.pages), 'selectedPages': selected,
                     'currentPage': min(max(current, 1), len(document.pages)),
@@ -136,14 +289,17 @@ def pdf_preview_page():
             error = str(exc)
     return render_template('pdf_preview.html', data=data, pdf_key=key, error=error,
                            recognition=locals().get('recognition'), tab_result=locals().get('tab_result'),
-                           editor_token=editor_token)
+                           editor_token=editor_token, tab_editor_token=tab_editor_token)
 
 
-def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None, arrangement_state=None, estimate_state=None, project_state=None, output_settings=None, filename="", filters=None, solo_result=None, **context):
+def render_page(*, selection=None, progression=None, notation=None, fingering_state=None, tab_state=None,
+                tab_document_data=None, arrangement_state=None, estimate_state=None, project_state=None,
+                output_settings=None, filename="", filters=None, solo_result=None, **context):
     output_settings = export_settings.normalize(output_settings)
     filters = filters or {}
     fingering_rows, fingering_error = (), None
     arrangement_warnings, arrangement_spans, arrangement_rows = [], [], []
+    dedicated_tab_token = None
     arrangement_form = {"arr_note_id": "", "role": "bass", "measure_id": "", "offset": "0", "duration": "1", "string": 6, "fret": 0}
     if selection is not None:
         fingering_state, fingering_rows, fingering_error = reconcile(selection, fingering_state)
@@ -159,7 +315,13 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                                     'offset': str(selected.start - measure.start), 'duration': str(selected.duration),
                                     'string': selected.string, 'fret': selected.fret}
         project_data = project.snapshot(selection, progression, notation or {'changes': [], 'warnings': []},
-                                        fingering_state, arrangement_state, filename, output_settings)
+                                        fingering_state, arrangement_state, filename, output_settings,
+                                        tab_document_data)
+        if tab_document_data is not None:
+            dedicated_tab_token = pdf_tab_editor_token(tab_document_data, filename or 'guitar-tab', {
+                'selection': selection.to_data(), 'progression': progression.to_data(),
+                'notation': notation or {'changes': [], 'warnings': []}, 'fingering': fingering_state,
+            })
         project_state = project.track(project_data, project_state)
         context.update(
             notes=selection.notes,
@@ -172,6 +334,7 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                 "notation": notation or {},
                 "fingering": fingering_state,
                 "tab_editor": tab_state,
+                "tab_document": tab_document_data,
                 "arrangement": arrangement_state,
                 "project": project_state,
                 "export_settings": output_settings,
@@ -208,7 +371,8 @@ def render_page(*, selection=None, progression=None, notation=None, fingering_st
                            tab_state=tab_state,
                            tab_selected=next((r for r in fingering_rows if tab_state and r["note"].note_id == tab_state["selected"]), None),
                            fingering_state=fingering_state, fingering_rows=fingering_rows, fingering_error=fingering_error,
-                           filename=filename, filters=filters, solo_result=solo_result, **context)
+                           filename=filename, filters=filters, solo_result=solo_result,
+                           dedicated_tab_token=dedicated_tab_token, **context)
 
 
 @app.errorhandler(413)
@@ -223,7 +387,8 @@ def download_project():
         selection = MelodySelection.from_data(state['selection'])
         progression = ChordProgression.from_data(state['progression'])
         data = project.snapshot(selection, progression, state['notation'], state['fingering'],
-                                state['arrangement'], state['filename'], state.get('export_settings'))
+                                state['arrangement'], state['filename'], state.get('export_settings'),
+                                state.get('tab_document'))
         metadata = project.track(data, state.get('project'))
         content = project.dumps(data, metadata)
         # This records the downloaded snapshot, not confirmation that the OS saved it.
@@ -252,6 +417,19 @@ def export_score(action):
     token = request.form.get('score_state', '')
     try:
         state = state_serializer().loads(token, max_age=8 * 60 * 60)
+        if state.get('tab_document') is not None:
+            document = tab_document.validate(state['tab_document'])
+            if action == 'musicxml':
+                name = project.filename(state.get('project', {}).get('name') or 'ギター譜').removesuffix('.guitar-tab.json') + '.musicxml'
+                response = send_file(BytesIO(tab_document.to_musicxml(document, state.get('filename') or 'ギター譜').encode('utf-8')),
+                                     mimetype='application/vnd.recordare.musicxml+xml', as_attachment=True,
+                                     download_name=name)
+            else:
+                response = app.make_response(render_template('dedicated_tab_print.html',
+                                                              title=state.get('filename') or 'ギター譜',
+                                                              layout=tab_document.layout(document)))
+            response.headers['Cache-Control'] = 'no-store'
+            return response
         result = score_export.prepare(
             MelodySelection.from_data(state['selection']), ChordProgression.from_data(state['progression']),
             state['notation'], state['fingering'], state['arrangement'], state.get('export_settings'),
@@ -298,6 +476,7 @@ def index():
     notation = {}
     fingering_state = None
     tab_state = None
+    tab_document_data = None
     arrangement_state = None
     project_state = None
     output_settings = None
@@ -330,6 +509,7 @@ def index():
                     notation = state.get("notation", {})
                     fingering_state = state.get("fingering")
                     tab_state = state.get("tab_editor")
+                    tab_document_data = state.get("tab_document")
                     arrangement_state = state.get("arrangement")
                     project_state = state.get("project")
                     output_settings = state.get("export_settings")
@@ -352,6 +532,7 @@ def index():
                 notation = imported.notation
                 fingering_state = None
                 tab_state = None
+                tab_document_data = None
                 arrangement_state = None
                 estimate_state = None
                 project_state = None
@@ -366,6 +547,7 @@ def index():
                 if selection is not None and request.form.get('replace_current') != 'yes':
                     raise ValueError('現在の作業を置き換える確認欄にチェックしてください。')
                 selection, progression, fingering_state, arrangement_state, project_state = restored
+                tab_document_data = document['data'].get('tab_document')
                 output_settings = document['data']['export_settings']
                 notation, filename = document['data']['notation'], document['data']['filename']
                 filters, tab_state, estimate_state = {}, None, None
@@ -538,6 +720,7 @@ def index():
         notation=notation,
         fingering_state=fingering_state,
         tab_state=tab_state,
+        tab_document_data=tab_document_data,
         arrangement_state=arrangement_state,
         project_state=project_state,
         output_settings=output_settings,
